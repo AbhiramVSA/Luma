@@ -308,6 +308,23 @@ wheels = [
 ]
 
 [[package]]
+name = "elevenlabs"
+version = "2.18.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "pydantic-core" },
+    { name = "requests" },
+    { name = "typing-extensions" },
+    { name = "websockets" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f6/b1/e57d32fc038b4fbf98798a98328c73b918fdb6eaf59c44c1f5a6fea3bd1e/elevenlabs-2.18.0.tar.gz", hash = "sha256:f1550c69253fcd642421b1bc3160d6e95dec705f48f10e18e0063f2972d269d9", size = 399576 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/41/27/518162d67de571881fc82e34542bd3ace5986dae9d7815eb2ebe007934af/elevenlabs-2.18.0-py3-none-any.whl", hash = "sha256:407571e721fb974a23ccea030312c2db24801bb559c77e8af98c8822a22145d3", size = 1085606 },
+]
+
+[[package]]
 name = "email-validator"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -740,6 +757,7 @@ name = "innerbhakti-video-generation-automation"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "elevenlabs" },
     { name = "fastapi", extra = ["standard"] },
     { name = "pydantic" },
     { name = "pydantic-ai" },
@@ -748,6 +766,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "elevenlabs", specifier = ">=2.18.0" },
     { name = "fastapi", extras = ["standard"], specifier = ">=0.119.0" },
     { name = "pydantic", specifier = ">=2.12.0" },
     { name = "pydantic-ai", specifier = ">=1.0.17" },
