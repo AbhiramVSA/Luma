@@ -1,7 +1,7 @@
 from pydantic_ai.providers.openai import OpenAIProvider
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai import Agent
-from src.config.config import settings
+from config.config import settings
 import os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -9,34 +9,21 @@ ELEVENLABS_PROMPT_PATH = os.path.join(BASE_DIR, "../prompts/elevenlabs_prompt.md
 HEYGEN_PROMPT_PATH = os.path.join(BASE_DIR, "../prompts/heygen_prompt.md")
 FREEPIK_PROMPT_PATH = os.path.join(BASE_DIR, "../prompts/freepik_prompt.md")
 
+
 def load_prompt(path: str) -> str:
     with open(path, "r", encoding="utf-8") as f:
         return f.read()
 
 
-provider = OpenAIProvider(
-    api_key=settings.OPENAI_API_KEY
-)
+provider = OpenAIProvider(api_key=settings.OPENAI_API_KEY)
 
-model = OpenAIChatModel(
-    model_name="gpt-5",
-    provider= provider    
-)
+model = OpenAIChatModel(model_name="gpt-5", provider=provider)
 
 # Agent for Eleven Labs
-audio_agent = Agent(
-    model = model,
-    system_prompt= load_prompt(ELEVENLABS_PROMPT_PATH)
-)
+audio_agent = Agent(model=model, system_prompt=load_prompt(ELEVENLABS_PROMPT_PATH))
 
 # Agent for Heygen
-heygen_agent = Agent(
-    model = model,
-    system_prompt= load_prompt(HEYGEN_PROMPT_PATH)
-)
+heygen_agent = Agent(model=model, system_prompt=load_prompt(HEYGEN_PROMPT_PATH))
 
 # Agent for freepik
-freepik_agent = Agent(
-    model = model,
-    system_prompt= load_prompt(FREEPIK_PROMPT_PATH)
-)
+freepik_agent = Agent(model=model, system_prompt=load_prompt(FREEPIK_PROMPT_PATH))
