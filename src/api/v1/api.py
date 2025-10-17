@@ -2,9 +2,14 @@
 
 from fastapi import APIRouter
 
-from .routers import elevenlabs_gen
+from .routers import elevenlabs_route, heygen_route
 
 api_router = APIRouter()
+
 api_router.include_router(
-    elevenlabs_gen.router, prefix="/elevenlabs", tags=["elevenlabs"]
+    elevenlabs_route.router, prefix="/elevenlabs", tags=["elevenlabs"]
+)
+
+api_router.include_router(
+    heygen_route.router, prefix="/heygen", tags=["heygen"]
 )

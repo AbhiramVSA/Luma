@@ -10,7 +10,10 @@ class Settings(BaseSettings):
     GROQ_API_KEY: str = Field(default="")
     ELEVENLABS_API_KEY: str = Field(default="")
     ELEVENLABS_URL: str = Field(default="https://api.elevenlabs.io/v1/text-to-dialogue")
-
+    HEYGEN_API_KEY: str = Field(default="")
+    HEYGEN_DEFAULT_TALKING_PHOTO_ID: str = Field(default="Monica_inSleeveless_20220819")
+    FREEPIK_API_KEY: str = Field(default="")
+    
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

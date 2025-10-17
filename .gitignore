@@ -4,3 +4,4 @@ test.py
 generated_audio/
 *.mp3
 *.wav
+.ruff_cache
