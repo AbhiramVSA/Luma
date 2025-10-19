@@ -6,7 +6,7 @@ import json
 import re
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 import requests
 from fastapi import APIRouter, HTTPException
@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from config.config import settings
 from controllers.generate_video import upload_audio_assets
+import controllers.heygen as heygen_controller
 from models.heygen import (
 	HeyGenStructuredOutput,
 	HeyGenVideoRequest,
@@ -23,163 +24,6 @@ from models.heygen import (
 from utils.agents import heygen_agent
 
 router = APIRouter()
-
-HEYGEN_GENERATE_URL = "https://api.heygen.com/v2/video/generate"
-HEYGEN_STATUS_URL = "https://api.heygen.com/v1/video_status.get"
-DEFAULT_TALKING_PHOTO_ID = (settings.HEYGEN_DEFAULT_TALKING_PHOTO_ID or "70febb5b01d6411682bceebd3bc7f5cb").strip()
-STATUS_POLL_INTERVAL_SECONDS = 5
-STATUS_MAX_ATTEMPTS = 24
-
-
-def _build_asset_lookup(assets: list[dict[str, Any]]) -> dict[str, str]:
-	lookup: dict[str, str] = {}
-
-	for asset in assets:
-		file_name = asset.get("file_name", "")
-		asset_id = asset.get("asset_id")
-		if not file_name or not asset_id:
-			continue
-
-		path = Path(file_name)
-		stem = path.stem.lower()
-		base_stem = stem.split("__", 1)[0]
-
-		candidates = {
-			stem,
-			stem.replace("-", "_"),
-			stem.replace("_", "-"),
-			base_stem,
-			base_stem.replace("-", "_"),
-			base_stem.replace("_", "-"),
-		}
-
-		scene_match = re.match(r"scene[\s_\-]?([0-9]+)", stem)
-		if scene_match:
-			number = scene_match.group(1)
-			candidates.update(
-				{
-					f"scene_{number}",
-					f"scene-{number}",
-					f"scene {number}",
-				}
-			)
-
-		for key in candidates:
-			if key:
-				lookup[key] = asset_id
-
-		scene_id = asset.get("scene_id")
-		if isinstance(scene_id, str) and scene_id.strip():
-			scene_slug = scene_id.strip().lower()
-			lookup[scene_slug] = asset_id
-			lookup[scene_slug.replace("-", "_")] = asset_id
-			lookup[scene_slug.replace("_", "-")] = asset_id
-
-	return lookup
-
-
-def _prepare_agent_input(script: str, assets: list[dict[str, Any]]) -> str:
-	asset_map: dict[str, str] = {}
-	for asset in assets:
-		asset_id = asset.get("asset_id")
-		if not asset_id:
-			continue
-
-		file_name = asset.get("file_name")
-		if isinstance(file_name, str) and file_name:
-			asset_map[file_name] = asset_id
-			stem = Path(file_name).stem
-			asset_map.setdefault(stem, asset_id)
-			if "__" in stem:
-				base_stem = stem.split("__", 1)[0]
-				asset_map.setdefault(base_stem, asset_id)
-				asset_map.setdefault(base_stem.replace("-", "_"), asset_id)
-				asset_map.setdefault(base_stem.replace("_", "-"), asset_id)
-
-		scene_id = asset.get("scene_id")
-		if isinstance(scene_id, str) and scene_id:
-			slug = scene_id.strip()
-			if slug:
-				asset_map.setdefault(slug, asset_id)
-				asset_map.setdefault(slug.replace("-", "_"), asset_id)
-				asset_map.setdefault(slug.replace("_", "-"), asset_id)
-
-	pretty_assets = json.dumps(asset_map, indent=2, ensure_ascii=False)
-
-	return (
-		"SCRIPT:\n"
-		f"{script.strip()}\n\n"
-		"AUDIO_ASSET_MAP:\n"
-		f"{pretty_assets}\n"
-	)
-
-
-def _submit_video_job(payload: dict[str, Any]) -> dict[str, Any]:
-	headers = {
-		"X-Api-Key": settings.HEYGEN_API_KEY,
-		"Content-Type": "application/json",
-	}
-
-	response = requests.post(
-		HEYGEN_GENERATE_URL,
-		json=payload,
-		headers=headers,
-		timeout=120,
-	)
-
-	if response.status_code != 200:
-		raise HTTPException(status_code=response.status_code, detail=response.text)
-
-	data = response.json()
-	if data.get("code") == 100:
-		return data
-
-	video_id = (data.get("data") or {}).get("video_id")
-	if data.get("error") in (None, "", {}) and video_id:
-		data.setdefault("code", 100)
-		data.setdefault("message", "Success")
-		return data
-
-	raise HTTPException(status_code=500, detail=data.get("message") or data.get("error") or data)
-
-	return data
-
-
-def _resolve_asset_id(scene_id: str, explicit_id: str | None, asset_lookup: dict[str, str]) -> str | None:
-	if explicit_id:
-		return explicit_id
-
-	slug = scene_id.lower().strip()
-	candidates = {
-		slug,
-		slug.replace("-", "_"),
-		slug.replace("_", "-"),
-	}
-
-	match = re.match(r"scene[\s_\-]?([0-9]+)", slug)
-	if match:
-		number = match.group(1)
-		candidates.update(
-			{
-				f"scene_{number}",
-				f"scene-{number}",
-				f"scene {number}",
-			}
-		)
-
-	for candidate in candidates:
-		if candidate in asset_lookup:
-			return asset_lookup[candidate]
-
-	return None
-
-
-def _normalize_talking_photo_id(candidate: str | None) -> str:
-	if candidate:
-		sanitized = candidate.strip()
-		if sanitized:
-			return sanitized
-	return DEFAULT_TALKING_PHOTO_ID
 
 
 @router.post("/upload-audio-assets", response_model=dict)
@@ -196,9 +40,9 @@ async def generate_video(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
 
 	assets_result = await upload_audio_assets(force=request.force_upload)
 	assets = assets_result.get("assets", [])
-	asset_lookup = _build_asset_lookup(assets)
+	asset_lookup = heygen_controller._build_asset_lookup(assets)
 
-	agent_input = _prepare_agent_input(request.script, assets)
+	agent_input = heygen_controller._prepare_agent_input(request.script, assets)
 
 	try:
 		agent_output_raw = await heygen_agent.run(agent_input)
@@ -215,18 +59,22 @@ async def generate_video(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
 	errors: list[str] = []
 
 	for scene in structured.scenes:
-		scene.audio_asset_id = _resolve_asset_id(scene.scene_id, scene.audio_asset_id, asset_lookup)
-		scene.talking_photo_id = _normalize_talking_photo_id(scene.talking_photo_id)
+		scene.audio_asset_id = heygen_controller._resolve_asset_id(
+			scene.scene_id,
+			scene.audio_asset_id,
+			asset_lookup,
+		)
+		scene.talking_photo_id = heygen_controller._normalize_talking_photo_id(scene.talking_photo_id)
 
 		if not scene.audio_asset_id:
 			missing_assets.append(scene.scene_id)
 			continue
 
 		payload = {
-            "dimension": {
-                "width": 720,
-                "height": 1280
-            },
+			"dimension": {
+				"width": 720,
+				"height": 1280,
+			},
 			"video_inputs": [
 				{
 					"character": {
@@ -237,13 +85,12 @@ async def generate_video(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
 						"type": "audio",
 						"audio_asset_id": scene.audio_asset_id,
 					},
-			
-				}
-			]
+				},
+			],
 		}
 
 		try:
-			response_json = _submit_video_job(payload)
+			response_json = heygen_controller._submit_video_job(payload)
 		except HTTPException as exc:
 			errors.append(f"{scene.scene_id}: {exc.detail}")
 			results.append(
@@ -256,7 +103,7 @@ async def generate_video(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
 					message=str(exc.detail),
 					request_payload=payload,
 					status_detail=None,
-				)
+				),
 			)
 			continue
 
@@ -305,10 +152,9 @@ async def generate_video(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
 				message=message,
 				request_payload=payload,
 				status_detail=status_payload,
-			)
+			),
 		)
 
-	status: str
 	if results and not missing_assets and not errors:
 		status = "success"
 	elif results:
@@ -324,11 +170,19 @@ async def generate_video(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
 	)
 
 
-def _fetch_video_status(video_id: str, *, max_attempts: int = STATUS_MAX_ATTEMPTS, interval_seconds: int = STATUS_POLL_INTERVAL_SECONDS) -> dict[str, Any]:
+def _fetch_video_status(
+    video_id: str,
+    *,
+    max_attempts: Optional[int] = None,
+    interval_seconds: Optional[int] = None,
+) -> dict[str, Any]:
 	"""Poll HeyGen for the latest video status and return the response payload."""
 
 	if not settings.HEYGEN_API_KEY:
 		raise HTTPException(status_code=400, detail="HEYGEN_API_KEY is not configured.")
+
+	max_attempts = max_attempts or heygen_controller.STATUS_MAX_ATTEMPTS
+	interval_seconds = interval_seconds or heygen_controller.STATUS_POLL_INTERVAL_SECONDS
 
 	headers = {
 		"X-Api-Key": settings.HEYGEN_API_KEY,
@@ -339,7 +193,7 @@ def _fetch_video_status(video_id: str, *, max_attempts: int = STATUS_MAX_ATTEMPT
 
 	for attempt in range(max_attempts):
 		response = requests.get(
-			HEYGEN_STATUS_URL,
+			heygen_controller.HEYGEN_STATUS_URL,
 			params=params,
 			headers=headers,
 			timeout=120,

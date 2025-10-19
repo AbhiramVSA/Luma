@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import ValidationError
 
 from config.config import settings
-from models.elevenlabs import ScriptRequest
+from models.elevenlabs_model import ScriptRequest
 from utils.agents import audio_agent
 
 router = APIRouter()

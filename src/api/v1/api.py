@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter
 
-from .routers import elevenlabs_route, heygen_route
+from .routers import elevenlabs_route, freepik_route, heygen_route
 
 api_router = APIRouter()
 
@@ -12,4 +12,8 @@ api_router.include_router(
 
 api_router.include_router(
     heygen_route.router, prefix="/heygen", tags=["heygen"]
+)
+
+api_router.include_router(
+    freepik_route.router, prefix="/freepik", tags=["freepik"]
 )
