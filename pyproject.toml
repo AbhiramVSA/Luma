@@ -1,0 +1,18 @@
+[project]
+name = "innerbhakti-video-generation-automation"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "elevenlabs>=2.18.0",
+    "fastapi[standard]>=0.119.0",
+    "pydantic>=2.12.0,<2.13.0",
+    "pydantic-ai>=1.0.17",
+    "pydantic-settings>=2.6.0,<2.11.0",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.0",
+]
