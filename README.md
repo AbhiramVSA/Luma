@@ -67,8 +67,8 @@ Luma provides a comprehensive video generation pipeline that automates the compl
 
 1. **Clone the repository**
    ```bash
-  git clone https://github.com/AbhiramVSA/Luma.git
-  cd Luma
+   git clone https://github.com/AbhiramVSA/Luma.git
+   cd Luma
    ```
 
 2. **Install backend dependencies**
@@ -93,11 +93,11 @@ Luma provides a comprehensive video generation pipeline that automates the compl
    ```
 
 4. **Install frontend dependencies**
-  ```bash
-  cd content-gen
-  pnpm install # or npm install
-  cd ..
-  ```
+   ```bash
+   cd content-gen
+   pnpm install  # or npm install
+   cd ..
+   ```
 
 ### Running the Backend API
 
