@@ -14,6 +14,7 @@ AUDIO_DIRECTORY = Path("generated_audio")
 ASSET_CACHE_PATH = AUDIO_DIRECTORY / "heygen_assets.json"
 AUDIO_MANIFEST_PATH = AUDIO_DIRECTORY / "scene_audio_map.json"
 
+
 def _load_cached_assets() -> dict[str, Any]:
     """Read the on-disk HeyGen asset cache into memory."""
 
@@ -52,6 +53,7 @@ def _load_scene_manifest() -> dict[str, str]:
 
     return mapping
 
+
 def _save_cached_assets(cache: dict[str, Any]) -> None:
     """Persist the asset cache so we avoid redundant HeyGen uploads."""
 
@@ -74,13 +76,14 @@ def _resolve_scene_id(file_path: Path, scene_manifest: dict[str, str]) -> str | 
     stem = stem.strip()
     return stem or None
 
+
 def _upload_single_audio(file_path: Path, scene_id: str | None) -> dict[str, Any]:
     """Upload an audio file to HeyGen and return the resulting asset payload."""
 
     headers = {
         "Content-Type": "audio/mpeg",
         "X-Api-Key": settings.HEYGEN_API_KEY,
-        "folder_id": "8f1fd5e9a5c0456882803e2f48a256eb"
+        "folder_id": "8f1fd5e9a5c0456882803e2f48a256eb",
     }
 
     with file_path.open("rb") as audio_file:
@@ -121,6 +124,7 @@ def _upload_single_audio(file_path: Path, scene_id: str | None) -> dict[str, Any
         "scene_id": scene_id,
     }
 
+
 def _list_audio_files() -> list[Path]:
     """Enumerate audio files awaiting upload, enforcing a helpful error if missing."""
 
@@ -134,8 +138,7 @@ def _list_audio_files() -> list[Path]:
         [
             path
             for path in AUDIO_DIRECTORY.glob("*.*")
-            if path.suffix.lower() in {".mp3", ".wav", ".m4a", ".aac"}
-            and path.is_file()
+            if path.suffix.lower() in {".mp3", ".wav", ".m4a", ".aac"} and path.is_file()
         ]
     )
 
@@ -146,6 +149,7 @@ def _list_audio_files() -> list[Path]:
         )
 
     return files
+
 
 async def upload_audio_assets(force: bool = False) -> dict[str, Any]:
     """Upload all generated audio files to HeyGen and return their asset IDs.

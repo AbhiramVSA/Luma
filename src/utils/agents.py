@@ -1,8 +1,10 @@
-from pydantic_ai.providers.openai import OpenAIProvider
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai import Agent
-from config.config import settings
 import os
+
+from pydantic_ai import Agent
+from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.providers.openai import OpenAIProvider
+
+from config.config import settings
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 ELEVENLABS_PROMPT_PATH = os.path.join(BASE_DIR, "../prompts/elevenlabs_prompt.md")
@@ -11,7 +13,7 @@ FREEPIK_PROMPT_PATH = os.path.join(BASE_DIR, "../prompts/freepik_prompt.md")
 
 
 def load_prompt(path: str) -> str:
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         return f.read()
 
 

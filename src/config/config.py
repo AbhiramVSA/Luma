@@ -1,6 +1,6 @@
-from pydantic_settings import BaseSettings
-from pydantic import Field
 from dotenv import load_dotenv
+from pydantic import Field
+from pydantic_settings import BaseSettings
 
 load_dotenv(dotenv_path=".env", override=True)
 
@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     HEYGEN_API_KEY: str = Field(default="")
     HEYGEN_DEFAULT_TALKING_PHOTO_ID: str = Field(default="Monica_inSleeveless_20220819")
     FREEPIK_API_KEY: str = Field(default="")
-    
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

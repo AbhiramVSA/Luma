@@ -1,7 +1,8 @@
 """Pydantic models for HeyGen video generation workflows."""
+
 from __future__ import annotations
 
-from typing import Any, Literal, Optional
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -17,19 +18,19 @@ class HeyGenSceneConfig(BaseModel):
     """Scene-level configuration extracted by the HeyGen agent."""
 
     scene_id: str = Field(description="Unique scene identifier, e.g., scene_1")
-    title: Optional[str] = Field(default=None, description="Optional scene title")
+    title: str | None = Field(default=None, description="Optional scene title")
     talking_photo_id: str = Field(description="HeyGen talking photo identifier to use")
     background: HeyGenBackground | None = Field(
         default=None,
         description="Background definition (defaults applied later if missing)",
     )
-    audio_asset_id: Optional[str] = Field(
+    audio_asset_id: str | None = Field(
         default=None,
         description="HeyGen audio asset id associated with the scene",
     )
 
     @model_validator(mode="after")
-    def ensure_defaults(self) -> "HeyGenSceneConfig":
+    def ensure_defaults(self) -> HeyGenSceneConfig:
         if self.background is None:
             self.background = HeyGenBackground(type="color", value="#FFFFFF")
         return self
@@ -47,8 +48,12 @@ class HeyGenVideoResult(BaseModel):
     scene_id: str
     status: Literal["submitted", "processing", "completed", "failed"]
     video_id: str | None = Field(default=None, description="HeyGen video identifier")
-    video_url: str | None = Field(default=None, description="Temporary streaming URL for the generated video")
-    thumbnail_url: str | None = Field(default=None, description="Thumbnail image URL for the generated video")
+    video_url: str | None = Field(
+        default=None, description="Temporary streaming URL for the generated video"
+    )
+    thumbnail_url: str | None = Field(
+        default=None, description="Thumbnail image URL for the generated video"
+    )
     message: str | None = None
     request_payload: dict[str, Any] | None = None
     status_detail: dict[str, Any] | None = Field(

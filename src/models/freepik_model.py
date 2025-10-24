@@ -1,4 +1,5 @@
 """Pydantic models for Freepik Kling image-to-video endpoint."""
+
 from __future__ import annotations
 
 from typing import Literal
@@ -62,7 +63,7 @@ class FreepikImageToVideoRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def ensure_prompt_or_image(self) -> "FreepikImageToVideoRequest":
+    def ensure_prompt_or_image(self) -> FreepikImageToVideoRequest:
         if not (self.image or self.prompt):
             raise ValueError("Either 'image' or 'prompt' must be provided.")
         return self

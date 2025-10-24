@@ -73,7 +73,9 @@ async def generate_audio(script: str = Body(..., embed=True)) -> dict[str, objec
     generated_timestamp = datetime.utcnow().isoformat() + "Z"
 
     for scene in script_config.scenes:
-        scene_inputs = [{"text": dialogue.text, "voice_id": dialogue.voice_id} for dialogue in scene.dialogues]
+        scene_inputs = [
+            {"text": dialogue.text, "voice_id": dialogue.voice_id} for dialogue in scene.dialogues
+        ]
 
         api_payload = {"inputs": scene_inputs}
         api_headers = {
