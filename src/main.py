@@ -30,10 +30,21 @@ app.add_middleware(
 generated_audio_dir = Path("generated_audio")
 generated_audio_dir.mkdir(parents=True, exist_ok=True)
 
+generated_assets_dir = Path("generated_assets")
+generated_assets_dir.mkdir(parents=True, exist_ok=True)
+generated_images_dir = generated_assets_dir / "images"
+generated_images_dir.mkdir(parents=True, exist_ok=True)
+
 app.mount(
     "/generated_audio",
     StaticFiles(directory=generated_audio_dir, check_dir=False),
     name="generated_audio",
+)
+
+app.mount(
+    "/generated_assets",
+    StaticFiles(directory=generated_assets_dir, check_dir=False),
+    name="generated_assets",
 )
 
 app.include_router(api_router, prefix="/api/v1")

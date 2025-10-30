@@ -12,6 +12,7 @@ ELEVENLABS_PROMPT_PATH = PROMPTS_DIR / "elevenlabs_prompt.md"
 HEYGEN_PROMPT_PATH = PROMPTS_DIR / "heygen_prompt.md"
 FREEPIK_PROMPT_PATH = PROMPTS_DIR / "freepik_prompt.md"
 HEYGEN_AVATAR_PROMPT_PATH = PROMPTS_DIR / "heygen_avatar_prompt.md"
+CREATOMATE_PROMPT_PATH = PROMPTS_DIR / "creatomate_prompt.md"
 
 
 def load_prompt(path: Path) -> str:
@@ -34,3 +35,6 @@ freepik_agent = Agent(model=model, system_prompt=load_prompt(FREEPIK_PROMPT_PATH
 
 # Agent for HeyGen Avatar IV
 heygen_avatar_agent = Agent(model=model, system_prompt=load_prompt(HEYGEN_AVATAR_PROMPT_PATH))
+
+# Agent for Creatomate payload preparation
+creatomate_agent = Agent(model=model, system_prompt=load_prompt(CREATOMATE_PROMPT_PATH))

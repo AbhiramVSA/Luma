@@ -4,9 +4,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import AudioGeneration from "@/components/audio-generation"
 import VideoGeneration from "@/components/video-generation"
 import ImageToVideo from "@/components/image-to-video"
+import CreatomateRender from "@/components/creatomate-render"
 import { AudioLibrary } from "@/components/audio-library"
 import { ApiConfig } from "@/components/api-config"
-import { Music, Play, ImageIcon, Folder } from "lucide-react"
+import { Music, Play, ImageIcon, Folder, Clapperboard } from "lucide-react"
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("audio")
@@ -51,11 +52,15 @@ export default function Home() {
                   </li>
                   <li className="flex gap-2">
                     <span className="text-primary font-bold">2.</span>
-                    <span>Create videos from audio</span>
+                    <span>Create talking-head videos with HeyGen</span>
                   </li>
                   <li className="flex gap-2">
                     <span className="text-primary font-bold">3.</span>
-                    <span>Or generate from images</span>
+                    <span>Experiment with image-to-video (optional)</span>
+                  </li>
+                  <li className="flex gap-2">
+                    <span className="text-primary font-bold">4.</span>
+                    <span>Render the final Creatomate project</span>
                   </li>
                 </ul>
               </div>
@@ -76,6 +81,10 @@ export default function Home() {
                     <ImageIcon className="h-3 w-3 text-primary" />
                     <span>Kling AI Videos</span>
                   </li>
+                  <li className="flex items-center gap-2">
+                    <Clapperboard className="h-3 w-3 text-primary" />
+                    <span>Creatomate Automation</span>
+                  </li>
                 </ul>
               </div>
             </div>
@@ -84,7 +93,7 @@ export default function Home() {
           {/* Main Content */}
           <div className="lg:col-span-3">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-4 mb-8 rounded-2xl bg-muted/40 p-1">
+              <TabsList className="grid w-full grid-cols-5 mb-8 rounded-2xl bg-muted/40 p-1">
                 <TabsTrigger value="audio" className="flex items-center gap-2 transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   <Music className="h-4 w-4" />
                   <span className="hidden sm:inline">Audio</span>
@@ -96,6 +105,10 @@ export default function Home() {
                 <TabsTrigger value="image-video" className="flex items-center gap-2 transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   <ImageIcon className="h-4 w-4" />
                   <span className="hidden sm:inline">Image</span>
+                </TabsTrigger>
+                <TabsTrigger value="creatomate" className="flex items-center gap-2 transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  <Clapperboard className="h-4 w-4" />
+                  <span className="hidden sm:inline">Creatomate</span>
                 </TabsTrigger>
                 <TabsTrigger value="library" className="flex items-center gap-2 transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   <Folder className="h-4 w-4" />
@@ -116,6 +129,11 @@ export default function Home() {
               {/* Image-to-Video Tab */}
               <TabsContent value="image-video" className="space-y-4 animate-fade-in-up" data-testid="tab-image">
                 <ImageToVideo />
+              </TabsContent>
+
+              {/* Creatomate Tab */}
+              <TabsContent value="creatomate" className="space-y-4 animate-fade-in-up" data-testid="tab-creatomate">
+                <CreatomateRender />
               </TabsContent>
 
               {/* Audio Library Tab */}
