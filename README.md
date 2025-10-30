@@ -240,7 +240,53 @@ Dialogue (VO): "Here's what we offer"
 
 ---
 
-### 2. Audio Generation Only
+### 2. HeyGen Avatar IV Generation
+
+**Endpoint:** `POST /api/v1/heygen/avatar-iv/generate`
+
+Create single-avatar Avatar IV videos by pairing a HeyGen image asset (`image_key`) with pre-uploaded audio. An LLM agent fills in the remaining required payload fields (title, script, voice, orientation, fit, and motion prompt) and falls back to safe defaults when the model output is invalid.
+
+#### Request Parameters
+
+| Field                     | Type    | Required | Description |
+|---------------------------|---------|----------|-------------|
+| `image_asset_id`          | string  | Yes      | Image key returned by HeyGen asset upload API |
+| `script`                  | string  | Yes      | Narration text pasted by the user; also feeds the agent |
+| `video_brief`             | string  | No       | Optional creative brief (defaults to `script` when omitted) |
+| `voice_preferences`       | string  | No       | Voice guidance or explicit HeyGen voice id |
+| `orientation_hint`        | enum    | No       | `portrait` or `landscape` preference (overrides agent)
+| `fit_hint`                | enum    | No       | `cover` or `contain` preference (overrides agent)
+| `enhance_motion_override` | bool    | No       | Force the `enhance_custom_motion_prompt` flag |
+| `force_upload_audio`      | bool    | No       | Re-upload audio assets before lookup |
+
+Audio assets are resolved automatically from `generated_audio/heygen_assets.json`; if multiple assets exist, the router matches on scene identifiers referenced in the script and falls back to the first available asset.
+
+#### Response Shape
+
+```json
+{
+  "status": "success",
+  "job": { "code": 100, "data": { "video_id": "..." } },
+  "prompts": {
+    "video_title": "...",
+    "script": "...",
+    "voice_id": "...",
+    "video_orientation": "portrait",
+    "fit": "cover",
+    "custom_motion_prompt": "...",
+    "enhance_custom_motion_prompt": true
+  },
+  "audio_asset_id": "...",
+  "audio_reference": "scene_1",
+  "request_payload": { "image_key": "...", "audio_asset_id": "...", "script": "..." }
+}
+```
+
+Failures return `status = "failed"` with details listed under `errors`.
+
+---
+
+### 3. Audio Generation Only
 
 **Endpoint:** `POST /api/v1/elevenlabs/generate-audio`
 
@@ -274,7 +320,7 @@ Generate audio files without video rendering.
 
 ---
 
-### 3. Upload Audio Assets
+### 4. Upload Audio Assets
 
 **Endpoint:** `POST /api/v1/heygen/upload-audio-assets`
 

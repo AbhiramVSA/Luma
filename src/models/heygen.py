@@ -85,3 +85,84 @@ class HeyGenVideoResponse(BaseModel):
         default_factory=list,
         description="Human-readable errors encountered during processing",
     )
+
+
+class HeyGenAvatarAgentOutput(BaseModel):
+    """Structured fields required for HeyGen Avatar IV generation."""
+
+    video_title: str = Field(..., max_length=80)
+    script: str = Field(..., min_length=20, max_length=2000)
+    voice_id: str = Field(..., min_length=3, max_length=100)
+    video_orientation: Literal["portrait", "landscape"] = Field(default="portrait")
+    fit: Literal["cover", "contain"] = Field(default="cover")
+    custom_motion_prompt: str = Field(..., max_length=500)
+    enhance_custom_motion_prompt: bool = Field(default=True)
+
+    @model_validator(mode="after")
+    def _sanitize(self) -> HeyGenAvatarAgentOutput:
+        self.video_title = self.video_title.strip()
+        self.script = self.script.strip()
+        self.voice_id = self.voice_id.strip()
+        self.custom_motion_prompt = self.custom_motion_prompt.strip()
+        if not self.video_title:
+            raise ValueError("video_title cannot be empty")
+        if not self.script:
+            raise ValueError("script cannot be empty")
+        if not self.voice_id:
+            raise ValueError("voice_id cannot be empty")
+        if not self.custom_motion_prompt:
+            raise ValueError("custom_motion_prompt cannot be empty")
+        return self
+
+
+class HeyGenAvatarVideoRequest(BaseModel):
+    """Request body for generating an Avatar IV video."""
+
+    image_asset_id: str = Field(..., description="Image key returned by HeyGen asset upload API")
+    script: str = Field(..., min_length=10, description="Narration text the avatar should speak")
+    video_brief: str | None = Field(
+        default=None,
+        description="Optional high-level creative brief supplied to the agent",
+    )
+    voice_preferences: str | None = Field(
+        default=None,
+        description="Voice attributes or preferred HeyGen voice id",
+    )
+    orientation_hint: Literal["portrait", "landscape"] | None = Field(default=None)
+    fit_hint: Literal["cover", "contain"] | None = Field(default=None)
+    enhance_motion_override: bool | None = Field(default=None)
+    force_upload_audio: bool = Field(
+        default=False,
+        description="Re-upload local audio assets to HeyGen before generating",
+    )
+
+    @model_validator(mode="after")
+    def _normalise_fields(self) -> HeyGenAvatarVideoRequest:
+        self.script = self.script.strip()
+        if not self.script:
+            raise ValueError("script cannot be empty")
+
+        if self.video_brief is not None:
+            brief = self.video_brief.strip()
+            self.video_brief = brief or self.script
+        else:
+            self.video_brief = self.script
+
+        if self.orientation_hint:
+            self.orientation_hint = self.orientation_hint.lower()  # type: ignore[assignment]
+        if self.fit_hint:
+            self.fit_hint = self.fit_hint.lower()  # type: ignore[assignment]
+
+        return self
+
+
+class HeyGenAvatarVideoResponse(BaseModel):
+    """Response payload for Avatar IV video generation."""
+
+    status: Literal["success", "failed"]
+    job: dict[str, Any] = Field(default_factory=dict)
+    prompts: HeyGenAvatarAgentOutput | None = None
+    audio_asset_id: str | None = None
+    audio_reference: str | None = None
+    request_payload: dict[str, Any] | None = Field(default=None)
+    errors: list[str] = Field(default_factory=list)

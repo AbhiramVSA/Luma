@@ -17,6 +17,7 @@ router = APIRouter()
 
 HEYGEN_GENERATE_URL = "https://api.heygen.com/v2/video/generate"
 HEYGEN_STATUS_URL = "https://api.heygen.com/v1/video_status.get"
+HEYGEN_AVATAR_IV_URL = "https://api.heygen.com/v2/video/av4/generate"
 DEFAULT_TALKING_PHOTO_ID = (
     settings.HEYGEN_DEFAULT_TALKING_PHOTO_ID or "70febb5b01d6411682bceebd3bc7f5cb"
 ).strip()
@@ -129,6 +130,39 @@ def _submit_video_job(payload: dict[str, Any]) -> dict[str, Any]:
         return data
 
     raise HTTPException(status_code=500, detail=data.get("message") or data.get("error") or data)
+
+    return data
+
+
+def _submit_avatar_iv_job(payload: dict[str, Any]) -> dict[str, Any]:
+    headers = {
+        "X-Api-Key": settings.HEYGEN_API_KEY,
+        "Content-Type": "application/json",
+        "accept": "application/json",
+    }
+
+    response = requests.post(
+        HEYGEN_AVATAR_IV_URL,
+        json=payload,
+        headers=headers,
+        timeout=120,
+    )
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=response.status_code, detail=response.text)
+
+    try:
+        data = response.json()
+    except ValueError as exc:  # pragma: no cover - defensive
+        raise HTTPException(
+            status_code=502,
+            detail="HeyGen Avatar IV returned invalid JSON",
+        ) from exc
+
+    error_message = data.get("message") or data.get("msg")
+    code = data.get("code")
+    if code not in (0, 100, None) and (data.get("error") or error_message):
+        raise HTTPException(status_code=502, detail=error_message or data.get("error"))
 
     return data
 

@@ -10,20 +10,27 @@ import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
 import { Loader2, AlertCircle, CheckCircle2, Upload, Download, RefreshCw, ImageIcon } from "lucide-react"
 
+interface FreepikPromptBundle {
+  prompt: string
+  negative_prompt?: string | null
+  cfg_scale: number
+  duration: "5" | "10"
+}
+
 interface ImageToVideoResponse {
   data: {
     task_id: string
     status: string
     generated: string[]
   }
+  prompts: FreepikPromptBundle
 }
 
 export default function ImageToVideo() {
   const [image, setImage] = useState<string | null>(null)
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [duration, setDuration] = useState("5")
-  const [prompt, setPrompt] = useState("")
-  const [negativePrompt, setNegativePrompt] = useState("")
+  const [script, setScript] = useState("")
   const [cfgScale, setCfgScale] = useState(0.5)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState("")
@@ -34,6 +41,7 @@ export default function ImageToVideo() {
   const [polling, setPolling] = useState(false)
   const [autoPolling, setAutoPolling] = useState(false)
   const [elapsedTime, setElapsedTime] = useState(0)
+  const [agentPrompts, setAgentPrompts] = useState<FreepikPromptBundle | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Auto-polling effect
@@ -88,8 +96,8 @@ export default function ImageToVideo() {
       return
     }
 
-    if (!prompt.trim() && !image) {
-      setError("Please provide either an image or a prompt")
+    if (script.trim().length < 10) {
+      setError("Script must be at least 10 characters long")
       return
     }
 
@@ -97,6 +105,7 @@ export default function ImageToVideo() {
     setError("")
     setSuccess(false)
     setElapsedTime(0)
+    setAgentPrompts(null)
 
     try {
       const response = await fetch("http://127.0.0.1:8002/api/v1/freepik/image-to-video/kling-v2-1-std", {
@@ -107,8 +116,7 @@ export default function ImageToVideo() {
         body: JSON.stringify({
           duration,
           image,
-          prompt: prompt || undefined,
-          negative_prompt: negativePrompt || undefined,
+          script,
           cfg_scale: cfgScale,
         }),
       })
@@ -121,6 +129,8 @@ export default function ImageToVideo() {
       const data: ImageToVideoResponse = await response.json()
       setTaskId(data.data.task_id)
       setTaskStatus(data.data.status)
+      setAgentPrompts(data.prompts)
+      setCfgScale(data.prompts.cfg_scale)
       setSuccess(true)
       setAutoPolling(true)
     } catch (err) {
@@ -240,28 +250,19 @@ export default function ImageToVideo() {
             </div>
           </div>
 
-          {/* Prompt */}
+          {/* Script */}
           <div className="space-y-2">
-            <label className="text-sm font-medium">Prompt ({prompt.length}/2500)</label>
+            <label className="text-sm font-medium">Narrative Script ({script.length}/2500)</label>
             <Textarea
-              placeholder="Describe what you want to see in the video..."
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value.slice(0, 2500))}
-              rows={4}
+              placeholder="Paste the narration or scene description that the agent should use to craft prompts..."
+              value={script}
+              onChange={(e) => setScript(e.target.value.slice(0, 2500))}
+              rows={6}
               className="font-mono text-sm"
             />
-          </div>
-
-          {/* Negative Prompt */}
-          <div className="space-y-2">
-            <label className="text-sm font-medium">Negative Prompt ({negativePrompt.length}/2500)</label>
-            <Textarea
-              placeholder="Describe what you don't want to see..."
-              value={negativePrompt}
-              onChange={(e) => setNegativePrompt(e.target.value.slice(0, 2500))}
-              rows={3}
-              className="font-mono text-sm"
-            />
+            <p className="text-xs text-muted-foreground">
+              The backend agent will transform this script into production-ready positive and negative prompts.
+            </p>
           </div>
 
           {/* CFG Scale */}
@@ -283,7 +284,7 @@ export default function ImageToVideo() {
             </p>
           </div>
 
-          <Button onClick={handleGenerateVideo} disabled={loading || !image} className="w-full" size="lg">
+          <Button onClick={handleGenerateVideo} disabled={loading || !image || script.trim().length < 10} className="w-full" size="lg">
             {loading ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -313,6 +314,43 @@ export default function ImageToVideo() {
           <CheckCircle2 className="h-4 w-4 text-green-600" />
           <AlertDescription className="text-green-600">Video task created successfully!</AlertDescription>
         </Alert>
+      )}
+
+      {/* Generated Prompts */}
+      {agentPrompts && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Generated Prompts</CardTitle>
+            <CardDescription>
+              Review the agent-crafted guidance used for the submitted Kling task.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Positive Prompt</label>
+              <Textarea value={agentPrompts.prompt} readOnly rows={4} className="font-mono text-sm" />
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Negative Prompt</label>
+              <Textarea
+                value={agentPrompts.negative_prompt || "(None)"}
+                readOnly
+                rows={3}
+                className="font-mono text-sm"
+              />
+            </div>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">CFG Scale</p>
+                <p className="font-mono text-sm">{agentPrompts.cfg_scale.toFixed(2)}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground uppercase tracking-wide">Duration</p>
+                <p className="font-mono text-sm">{agentPrompts.duration} seconds</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Status Section */}
