@@ -1,5 +1,6 @@
 "use client"
 import { useState, useEffect, useMemo, useDeferredValue, useCallback } from "react"
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -344,11 +345,15 @@ export default function VideoGeneration() {
                   </div>
 
                   {result.thumbnail_url && (
-                    <img
-                      src={result.thumbnail_url || "/placeholder.svg"}
-                      alt={`${result.scene_id} thumbnail`}
-                      className="w-full h-32 object-cover rounded-lg"
-                    />
+                    <div className="relative h-32 w-full overflow-hidden rounded-lg">
+                      <Image
+                        src={result.thumbnail_url || "/placeholder.svg"}
+                        alt={`${result.scene_id} thumbnail`}
+                        fill
+                        sizes="(min-width: 768px) 50vw, 100vw"
+                        className="object-cover"
+                      />
+                    </div>
                   )}
 
                   {result.video_url && result.status === "completed" && (

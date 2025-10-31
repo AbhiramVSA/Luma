@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { motion } from "framer-motion"
 import { useState, useEffect } from "react"
 import { Badge } from "@/components/ui/badge"
@@ -153,10 +154,12 @@ export default function Hero() {
 
                 {/* Tailwind CSS Logo */}
                 <div className="opacity-60 grayscale hover:opacity-100 hover:grayscale-0 hover:drop-shadow-[0_0_8px_rgba(56,189,248,0.5)] transition-all duration-300">
-                  <img
+                  <Image
                     src="https://hebbkx1anhila5yf.public.blob.vercel-storage.com/Tailwind_CSS_Logo.svg-6xxjTKleFAC9zoBBGesuy0rIESAcXA.png"
                     alt="Tailwind CSS"
-                    className="h-8 object-contain"
+                    width={128}
+                    height={32}
+                    className="h-8 w-auto object-contain"
                   />
                 </div>
 

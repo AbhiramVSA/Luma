@@ -23,6 +23,13 @@ export function usePolling(
   const attemptsRef = useRef(0)
   const intervalRef = useRef<NodeJS.Timeout | null>(null)
 
+  const stopPolling = useCallback(() => {
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current)
+      intervalRef.current = null
+    }
+  }, [])
+
   const startPolling = useCallback(() => {
     attemptsRef.current = 0
 
@@ -48,14 +55,7 @@ export function usePolling(
 
     poll()
     intervalRef.current = setInterval(poll, interval)
-  }, [fetchFn, shouldContinue, interval, maxAttempts, onSuccess, onError, onComplete])
-
-  const stopPolling = useCallback(() => {
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current)
-      intervalRef.current = null
-    }
-  }, [])
+  }, [fetchFn, shouldContinue, interval, maxAttempts, onSuccess, onError, onComplete, stopPolling])
 
   useEffect(() => {
     return () => stopPolling()
@@ -111,7 +111,17 @@ export function useExponentialBackoffPolling(
     }
 
     poll()
-  }, [fetchFn, shouldContinue, baseInterval, maxInterval, maxAttempts, onSuccess, onError, onComplete])
+  }, [
+    fetchFn,
+    shouldContinue,
+    baseInterval,
+    maxInterval,
+    maxAttempts,
+    onSuccess,
+    onError,
+    onComplete,
+    stopPolling,
+  ])
 
   const stopPolling = useCallback(() => {
     if (intervalRef.current) {

@@ -13,14 +13,16 @@ export default function LoginPage() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
+  const [statusMessage, setStatusMessage] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
+    setStatusMessage(null)
     // Simulate login process
     await new Promise((resolve) => setTimeout(resolve, 1000))
     setIsLoading(false)
-    console.log("[v0] Login attempt:", { email, password })
+    setStatusMessage("Signed in successfully. Redirecting...")
   }
 
   return (
@@ -126,6 +128,11 @@ export default function LoginPage() {
             >
               {isLoading ? "Signing in..." : "Sign in"}
             </Button>
+            {statusMessage && (
+              <p className="text-sm text-zinc-300" role="status" aria-live="polite">
+                {statusMessage}
+              </p>
+            )}
           </form>
 
           <div className="mt-6 text-center">

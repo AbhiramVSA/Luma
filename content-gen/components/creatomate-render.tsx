@@ -2,6 +2,8 @@
 
 import { useState, useMemo, useDeferredValue, useCallback } from "react"
 
+import Image from "next/image"
+
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -388,7 +390,7 @@ export default function CreatomateRender() {
                       {scene.upload_error && <p className="text-xs text-red-600">{scene.upload_error}</p>}
                       {(scene.preview_url || scene.image_url) && (
                         <div className="flex items-center gap-3 rounded-md border border-dashed border-border/60 p-2">
-                          <img
+                          <Image
                             src={
                               scene.preview_url
                                 || (scene.image_url.startsWith("http")
@@ -396,6 +398,8 @@ export default function CreatomateRender() {
                                   : `${API_BASE_URL}${scene.image_url}`)
                             }
                             alt={`${scene.scene_id || `scene-${index + 1}`} reference`}
+                            width={64}
+                            height={64}
                             className="h-16 w-16 rounded-md object-cover"
                           />
                           {scene.image_url && (

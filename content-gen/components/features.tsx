@@ -2,6 +2,7 @@
 
 import type React from "react"
 
+import Image from "next/image"
 import { useTheme } from "next-themes"
 import Earth from "./ui/globe"
 import ScrambleHover from "./ui/scramble"
@@ -99,10 +100,12 @@ export default function Features() {
                   >
                     {/* Background Image */}
                     <div className="absolute inset-0">
-                      <img
+                      <Image
                         src="https://framerusercontent.com/images/UjqUIiBHmIcSH9vos9HlG2BF4bo.png"
                         alt="Arrow-CoreExchange"
-                        className="w-full h-full object-cover rounded-xl"
+                        fill
+                        className="rounded-xl object-cover"
+                        sizes="(min-width: 1280px) 50vw, 100vw"
                       />
                     </div>
 
@@ -186,16 +189,18 @@ export default function Features() {
 
                         {/* Center Logo */}
                         <motion.div
-                          className="w-16 h-16 border border-gray-300 rounded-lg overflow-hidden shadow-lg"
+                          className="relative w-16 h-16 border border-gray-300 rounded-lg overflow-hidden shadow-lg"
                           initial={{ opacity: 1, scale: 1 }}
                           animate={isCliHovering ? { scale: [1, 1.1, 1] } : { scale: 1 }}
                           transition={{ duration: 0.6, ease: "easeOut" }}
                           whileHover={{ scale: 1.1, rotate: 5 }}
                         >
-                          <img
+                          <Image
                             src="https://framerusercontent.com/images/q43ivjLz67lXhWf6TKfLIh0FY.png"
                             alt="Logo"
-                            className="w-full h-full object-cover"
+                            fill
+                            className="object-cover"
+                            sizes="64px"
                           />
                         </motion.div>
 
@@ -435,12 +440,14 @@ export default function Features() {
                 </div>
                 <div className="flex grow items-center justify-center select-none relative min-h-[300px] p-4">
                   <div className="relative w-full max-w-sm">
-                    <img
+                    <Image
                       src="/modern-grid-layout.png"
                       alt="Dynamic Layout Example"
-                      className="w-full h-auto rounded-lg shadow-lg"
+                      width={512}
+                      height={512}
+                      className="h-auto w-full rounded-lg shadow-lg"
                     />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent rounded-lg"></div>
+                    <div className="absolute inset-0 rounded-lg bg-gradient-to-t from-black/20 to-transparent"></div>
                   </div>
                 </div>
               </motion.div>

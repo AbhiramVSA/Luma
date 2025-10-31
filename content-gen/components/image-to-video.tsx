@@ -1,7 +1,8 @@
 "use client"
-import { useState, useRef, useEffect } from "react"
+import { useState, useRef, useEffect, useCallback } from "react"
 import type React from "react"
 
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Textarea } from "@/components/ui/textarea"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -44,6 +45,35 @@ export default function ImageToVideo() {
   const [agentPrompts, setAgentPrompts] = useState<FreepikPromptBundle | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
+  const handleCheckStatus = useCallback(async () => {
+    if (!taskId) return
+
+    setPolling(true)
+    setError("")
+
+    try {
+      const response = await fetch(
+        `http://127.0.0.1:8002/api/v1/freepik/image-to-video/kling-v2-1/${taskId}?wait_for_completion=false`,
+        {
+          method: "GET",
+        },
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.detail || "Failed to check status")
+      }
+
+      const data: ImageToVideoResponse = await response.json()
+      setTaskStatus(data.data.status)
+      setGeneratedVideos(data.data.generated)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "An error occurred")
+    } finally {
+      setPolling(false)
+    }
+  }, [taskId])
+
   // Auto-polling effect
   useEffect(() => {
     if (!autoPolling || !taskId) return
@@ -54,7 +84,7 @@ export default function ImageToVideo() {
     }, 5000)
 
     return () => clearInterval(interval)
-  }, [autoPolling, taskId])
+  }, [autoPolling, taskId, handleCheckStatus])
 
   // Stop polling when completed
   useEffect(() => {
@@ -140,35 +170,6 @@ export default function ImageToVideo() {
     }
   }
 
-  const handleCheckStatus = async () => {
-    if (!taskId) return
-
-    setPolling(true)
-    setError("")
-
-    try {
-      const response = await fetch(
-        `http://127.0.0.1:8002/api/v1/freepik/image-to-video/kling-v2-1/${taskId}?wait_for_completion=false`,
-        {
-          method: "GET",
-        },
-      )
-
-      if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.detail || "Failed to check status")
-      }
-
-      const data: ImageToVideoResponse = await response.json()
-      setTaskStatus(data.data.status)
-      setGeneratedVideos(data.data.generated)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred")
-    } finally {
-      setPolling(false)
-    }
-  }
-
   const getStatusColor = (status: string) => {
     switch (status) {
       case "COMPLETED":
@@ -208,7 +209,15 @@ export default function ImageToVideo() {
             >
               {image ? (
                 <div className="space-y-2">
-                  <img src={image || "/placeholder.svg"} alt="Uploaded" className="max-h-48 mx-auto rounded-lg" />
+                  <div className="relative mx-auto h-48 w-full max-w-sm">
+                    <Image
+                      src={image || "/placeholder.svg"}
+                      alt="Uploaded"
+                      fill
+                      sizes="(min-width: 640px) 320px, 200px"
+                      className="rounded-lg object-contain"
+                    />
+                  </div>
                   <p className="text-sm text-muted-foreground">{imageFile?.name}</p>
                   <p className="text-xs text-muted-foreground">
                     {(imageFile?.size || 0) > 1024 * 1024

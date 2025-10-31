@@ -17,6 +17,7 @@ export default function SignupPage() {
     confirmPassword: "",
   })
   const [isLoading, setIsLoading] = useState(false)
+  const [feedback, setFeedback] = useState<{ type: "error" | "success"; message: string } | null>(null)
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
@@ -27,15 +28,16 @@ export default function SignupPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setFeedback(null)
     if (formData.password !== formData.confirmPassword) {
-      console.log("[v0] Password mismatch")
+      setFeedback({ type: "error", message: "Passwords do not match. Please try again." })
       return
     }
     setIsLoading(true)
     // Simulate signup process
     await new Promise((resolve) => setTimeout(resolve, 1000))
     setIsLoading(false)
-    console.log("[v0] Signup attempt:", formData)
+    setFeedback({ type: "success", message: "Account created successfully. Check your inbox to verify your email." })
   }
 
   return (
@@ -181,6 +183,15 @@ export default function SignupPage() {
             >
               {isLoading ? "Creating account..." : "Create account"}
             </Button>
+            {feedback && (
+              <p
+                role="status"
+                aria-live="polite"
+                className={`text-sm ${feedback.type === "error" ? "text-red-400" : "text-green-400"}`}
+              >
+                {feedback.message}
+              </p>
+            )}
           </form>
 
           <div className="mt-6 text-center">
