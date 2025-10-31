@@ -12,7 +12,7 @@ router = APIRouter()
 
 
 @router.post("/generate-audio")
-async def generate_audio(script: str = Body(..., embed=True)) -> dict[str, object]:
+async def create_audio_assets(script: str = Body(..., embed=True)) -> dict[str, object]:
     """Generate per-scene audio clips through the ElevenLabs dialogue API."""
 
     _, payload = await synthesize_audio_assets(script)
@@ -20,14 +20,14 @@ async def generate_audio(script: str = Body(..., embed=True)) -> dict[str, objec
 
 
 @router.get("/audio-files")
-async def list_audio_files() -> dict[str, object]:
+async def get_audio_files() -> dict[str, object]:
     """Enumerate locally cached audio files available for reuse or download."""
 
     return describe_audio_directory()
 
 
 @router.delete("/audio-files")
-async def clear_audio_files() -> dict[str, object]:
+async def delete_audio_files() -> dict[str, object]:
     """Remove generated audio assets and supporting metadata from disk."""
 
     return clear_audio_storage()

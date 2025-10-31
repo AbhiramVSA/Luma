@@ -1,4 +1,4 @@
-"""HeyGen FastAPI routes for asset upload and video generation."""
+"""HeyGen controller helpers for asset upload and video generation."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import requests
-from fastapi import APIRouter, HTTPException
+from fastapi import HTTPException
 from pydantic import ValidationError
 
 from config.config import settings
@@ -22,8 +22,6 @@ from models.heygen import (
     HeyGenVideoResult,
 )
 from utils.agents import heygen_agent
-
-router = APIRouter()
 
 HEYGEN_GENERATE_URL = "https://api.heygen.com/v2/video/generate"
 HEYGEN_STATUS_URL = "https://api.heygen.com/v1/video_status.get"
@@ -538,10 +536,3 @@ async def generate_video_batch(
         missing_assets=missing_assets,
         errors=errors,
     )
-
-
-@router.post("/upload-audio-assets", response_model=dict)
-async def upload_audio_assets_endpoint(force: bool = False) -> dict[str, Any]:
-    """Expose audio upload helper via API."""
-
-    return await upload_audio_assets(force=force)

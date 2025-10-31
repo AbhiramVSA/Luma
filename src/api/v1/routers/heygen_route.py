@@ -27,14 +27,14 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/upload-audio-assets", response_model=dict)
-async def upload_audio_assets_endpoint(force: bool = False) -> dict[str, Any]:
+async def upload_audio_assets_route(force: bool = False) -> dict[str, Any]:
     """Expose audio upload helper via API."""
 
     return await upload_audio_assets(force=force)
 
 
 @router.post("/generate-video", response_model=HeyGenVideoResponse)
-async def generate_video(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
+async def create_video_jobs(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
     if not settings.HEYGEN_API_KEY:
         raise HTTPException(status_code=400, detail="HEYGEN_API_KEY is not configured.")
 
@@ -45,7 +45,7 @@ async def generate_video(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
 
 
 @router.post("/avatar-iv/generate", response_model=HeyGenAvatarVideoResponse)
-async def generate_avatar_iv_video(
+async def create_avatar_iv_video(
     request: HeyGenAvatarVideoRequest,
 ) -> HeyGenAvatarVideoResponse:
     if not settings.HEYGEN_API_KEY:
@@ -105,7 +105,6 @@ async def generate_avatar_iv_video(
         "audio_asset_id": resolved_audio_asset_id,
     }
 
-    # Some workflows still expect script + voice, include for completeness.
     payload["script"] = prompts.script
     payload["voice_id"] = prompts.voice_id
 

@@ -23,7 +23,7 @@ AUDIO_CACHE_PATH = OUTPUT_DIR / "heygen_assets.json"
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac"}
 
 
-def iter_audio_files() -> list[Path]:
+def list_generated_audio_files() -> list[Path]:
     """Return generated audio files sorted by modified time (newest first)."""
 
     if not OUTPUT_DIR.exists():
@@ -38,7 +38,7 @@ def iter_audio_files() -> list[Path]:
     return sorted(files, key=lambda path: path.stat().st_mtime, reverse=True)
 
 
-def format_size(num_bytes: int) -> str:
+def format_file_size(num_bytes: int) -> str:
     """Render a human readable file size label."""
 
     if num_bytes < 1024:
@@ -125,14 +125,14 @@ def describe_audio_directory() -> dict[str, Any]:
     """Return metadata about locally cached audio assets."""
 
     files: list[dict[str, Any]] = []
-    for path in iter_audio_files():
+    for path in list_generated_audio_files():
         stats = path.stat()
         files.append(
             {
                 "file_name": path.name,
                 "relative_path": f"{OUTPUT_DIR.name}/{path.name}",
                 "size_bytes": stats.st_size,
-                "size_readable": format_size(stats.st_size),
+                "size_readable": format_file_size(stats.st_size),
                 "modified_at": datetime.utcfromtimestamp(stats.st_mtime).isoformat() + "Z",
                 "download_url": f"/generated_audio/{path.name}",
             }
@@ -152,7 +152,7 @@ def clear_audio_storage() -> dict[str, Any]:
     deleted_files: list[str] = []
     errors: list[str] = []
 
-    for path in iter_audio_files():
+    for path in list_generated_audio_files():
         try:
             path.unlink()
             deleted_files.append(path.name)

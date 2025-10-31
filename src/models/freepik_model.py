@@ -63,7 +63,7 @@ class FreepikImageToVideoRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def ensure_prompt_or_image(self) -> FreepikImageToVideoRequest:
+    def validate_prompt_or_image(self) -> FreepikImageToVideoRequest:
         if not (self.image or self.prompt):
             raise ValueError("Either 'image' or 'prompt' must be provided.")
         return self
@@ -89,7 +89,7 @@ class FreepikPromptBundle(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _normalize_prompts(self) -> FreepikPromptBundle:
+    def _normalize_fields(self) -> FreepikPromptBundle:
         self.prompt = self.prompt.strip()
         if not self.prompt:
             raise ValueError("prompt cannot be empty")
@@ -110,7 +110,7 @@ class FreepikAgentPromptOutput(BaseModel):
     duration: Literal["5", "10"] | None = Field(default=None)
 
     @model_validator(mode="after")
-    def _normalize(self) -> FreepikAgentPromptOutput:
+    def _normalize_fields(self) -> FreepikAgentPromptOutput:
         self.prompt = self.prompt.strip()
         if not self.prompt:
             raise ValueError("prompt cannot be empty")
@@ -154,7 +154,7 @@ class FreepikImageToVideoGenerationRequest(BaseModel):
     dynamic_masks: list[DynamicMask] | None = Field(default=None)
 
     @model_validator(mode="after")
-    def _strip_script(self) -> FreepikImageToVideoGenerationRequest:
+    def _normalize_fields(self) -> FreepikImageToVideoGenerationRequest:
         self.script = self.script.strip()
         if not self.script:
             raise ValueError("script cannot be empty")

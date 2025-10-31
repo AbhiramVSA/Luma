@@ -10,11 +10,11 @@ from controllers.freepik import (
     DEFAULT_POLL_TIMEOUT_SECONDS,
     FREEPIK_IMAGE_TO_VIDEO_URL,
     REQUEST_TIMEOUT_SECONDS,
-    _build_headers,
+    _build_request_headers,
     _fetch_task_status,
-    _parse_freepik_response,
-    _poll_task_status,
-    _stream_generated_asset,
+    _parse_task_response,
+    _poll_task_status_until_complete,
+    _stream_generated_video,
     generate_prompt_bundle,
 )
 from models.freepik_model import (
@@ -29,7 +29,7 @@ router = APIRouter()
 
 
 @router.post("/image-to-video/kling-v2-1-std", response_model=FreepikVideoTaskResponse)
-async def create_kling_video(
+async def create_kling_video_task(
     request: FreepikImageToVideoGenerationRequest,
 ) -> FreepikVideoTaskResponse:
     prompt_bundle = await generate_prompt_bundle(request)
@@ -56,19 +56,19 @@ async def create_kling_video(
         response = requests.post(
             FREEPIK_IMAGE_TO_VIDEO_URL,
             json=payload,
-            headers=_build_headers(),
+            headers=_build_request_headers(),
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:  # pragma: no cover - network failures
         raise HTTPException(status_code=502, detail=f"Freepik API request failed: {exc}") from exc
 
-    parsed = _parse_freepik_response(response)
+    parsed_response = _parse_task_response(response)
 
     applied_cfg_scale = payload.get("cfg_scale", prompt_bundle.cfg_scale)
     applied_duration = payload.get("duration", prompt_bundle.duration)
 
     return FreepikVideoTaskResponse(
-        data=parsed.data,
+        data=parsed_response.data,
         prompts=FreepikPromptBundle(
             prompt=str(payload.get("prompt", prompt_bundle.prompt)),
             negative_prompt=payload.get("negative_prompt"),
@@ -79,7 +79,7 @@ async def create_kling_video(
 
 
 @router.get("/image-to-video/kling-v2-1/{task_id}", response_model=FreepikImageToVideoResponse)
-async def get_kling_video_status(
+async def fetch_kling_video_status(
     task_id: UUID,
     wait_for_completion: bool = False,
     poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
@@ -92,21 +92,21 @@ async def get_kling_video_status(
     if timeout <= 0:
         timeout = DEFAULT_POLL_TIMEOUT_SECONDS
 
-    status_response = (
-        await _poll_task_status(task_id, poll_interval, timeout)
+    task_status = (
+        await _poll_task_status_until_complete(task_id, poll_interval, timeout)
         if wait_for_completion or download
         else _fetch_task_status(task_id)
     )
 
     if not download:
-        return status_response
+        return task_status
 
-    if status_response.data.status.upper() != "COMPLETED":
+    if task_status.data.status.upper() != "COMPLETED":
         raise HTTPException(
             status_code=409, detail="Task is not completed yet; cannot download video."
         )
 
-    generated_assets = status_response.data.generated
+    generated_assets = task_status.data.generated
     if not generated_assets:
         raise HTTPException(
             status_code=404, detail="No generated video URLs were returned for this task."
@@ -117,4 +117,4 @@ async def get_kling_video_status(
             status_code=400, detail="asset_index is out of range for the generated results."
         )
 
-    return _stream_generated_asset(task_id, str(generated_assets[asset_index]))
+    return _stream_generated_video(task_id, str(generated_assets[asset_index]))

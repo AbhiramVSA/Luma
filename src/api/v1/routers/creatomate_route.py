@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/render", response_model=CreatomateRenderResponse)
-async def render_creatomate_video(
+async def render_video(
     request: CreatomateRenderRequest,
 ) -> CreatomateRenderResponse:
     """Execute the full pipeline: audio -> HeyGen videos -> Creatomate render."""
@@ -31,7 +31,7 @@ async def render_creatomate_video(
 
 
 @router.post("/upload-image")
-async def upload_creatomate_image(
+async def upload_scene_image(
     scene_id: Annotated[str, Form(...)],
     file: Annotated[UploadFile, File(...)],
 ) -> dict[str, str]:

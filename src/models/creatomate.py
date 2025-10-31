@@ -17,7 +17,7 @@ class CreatomateSceneAsset(BaseModel):
     notes: str | None = Field(default=None, description="Free-form notes for the automation agent")
 
     @model_validator(mode="after")
-    def _normalise(self) -> CreatomateSceneAsset:
+    def _normalize_fields(self) -> CreatomateSceneAsset:
         self.scene_id = self.scene_id.strip()
         self.image_url = self.image_url.strip()
         if not self.scene_id:
@@ -56,7 +56,7 @@ class CreatomateRenderRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _normalise(self) -> CreatomateRenderRequest:
+    def _normalize_fields(self) -> CreatomateRenderRequest:
         self.script = self.script.strip()
         if not self.script:
             raise ValueError("script cannot be empty")
@@ -80,7 +80,7 @@ class CreatomateAgentOutput(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate(self) -> CreatomateAgentOutput:
+    def _validate_payload(self) -> CreatomateAgentOutput:
         self.template_id = self.template_id.strip()
         if not self.template_id:
             raise ValueError("template_id cannot be empty")

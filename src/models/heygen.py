@@ -30,7 +30,7 @@ class HeyGenSceneConfig(BaseModel):
     )
 
     @model_validator(mode="after")
-    def ensure_defaults(self) -> HeyGenSceneConfig:
+    def apply_defaults(self) -> HeyGenSceneConfig:
         if self.background is None:
             self.background = HeyGenBackground(type="color", value="#FFFFFF")
         return self
@@ -99,7 +99,7 @@ class HeyGenAvatarAgentOutput(BaseModel):
     enhance_custom_motion_prompt: bool = Field(default=True)
 
     @model_validator(mode="after")
-    def _sanitize(self) -> HeyGenAvatarAgentOutput:
+    def _normalize_fields(self) -> HeyGenAvatarAgentOutput:
         self.video_title = self.video_title.strip()
         self.script = self.script.strip()
         self.voice_id = self.voice_id.strip()
@@ -137,7 +137,7 @@ class HeyGenAvatarVideoRequest(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _normalise_fields(self) -> HeyGenAvatarVideoRequest:
+    def _normalize_fields(self) -> HeyGenAvatarVideoRequest:
         self.script = self.script.strip()
         if not self.script:
             raise ValueError("script cannot be empty")

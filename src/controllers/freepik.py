@@ -95,14 +95,14 @@ def _require_api_key() -> str:
     return settings.FREEPIK_API_KEY
 
 
-def _build_headers(include_content_type: bool = True) -> dict[str, str]:
+def _build_request_headers(include_content_type: bool = True) -> dict[str, str]:
     headers = {"x-freepik-api-key": _require_api_key()}
     if include_content_type:
         headers["Content-Type"] = "application/json"
     return headers
 
 
-def _parse_freepik_response(response: requests.Response) -> FreepikImageToVideoResponse:
+def _parse_task_response(response: requests.Response) -> FreepikImageToVideoResponse:
     if response.status_code >= 400:
         try:
             error_payload = response.json()
@@ -127,7 +127,7 @@ def _fetch_task_status(task_id: UUID) -> FreepikImageToVideoResponse:
     try:
         response = requests.get(
             f"{FREEPIK_STATUS_URL}/{task_id}",
-            headers=_build_headers(include_content_type=False),
+            headers=_build_request_headers(include_content_type=False),
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
     except requests.RequestException as exc:  # pragma: no cover - network failures
@@ -135,10 +135,10 @@ def _fetch_task_status(task_id: UUID) -> FreepikImageToVideoResponse:
             status_code=502, detail=f"Freepik status request failed: {exc}"
         ) from exc
 
-    return _parse_freepik_response(response)
+    return _parse_task_response(response)
 
 
-async def _poll_task_status(
+async def _poll_task_status_until_complete(
     task_id: UUID,
     poll_interval: float,
     timeout: float,
@@ -161,10 +161,10 @@ async def _poll_task_status(
             )
 
         await asyncio.sleep(max(poll_interval, 0.5))
-        latest = _fetch_task_status(task_id)
+    latest = _fetch_task_status(task_id)
 
 
-def _stream_generated_asset(task_id: UUID, asset_url: str) -> StreamingResponse:
+def _stream_generated_video(task_id: UUID, asset_url: str) -> StreamingResponse:
     try:
         upstream = requests.get(asset_url, stream=True, timeout=REQUEST_TIMEOUT_SECONDS)
         upstream.raise_for_status()
@@ -176,7 +176,7 @@ def _stream_generated_asset(task_id: UUID, asset_url: str) -> StreamingResponse:
     filename = Path(urlparse(asset_url).path).name or f"{task_id}.mp4"
     media_type = upstream.headers.get("Content-Type", "video/mp4")
 
-    def iter_stream() -> Iterator[bytes]:
+    def stream_chunks() -> Iterator[bytes]:
         try:
             for chunk in upstream.iter_content(chunk_size=8192):
                 if chunk:
@@ -185,7 +185,7 @@ def _stream_generated_asset(task_id: UUID, asset_url: str) -> StreamingResponse:
             upstream.close()
 
     return StreamingResponse(
-        iter_stream(),
+        stream_chunks(),
         media_type=media_type,
         headers={
             "Content-Disposition": f'attachment; filename="{filename}"',
