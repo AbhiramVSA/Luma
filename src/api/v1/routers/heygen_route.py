@@ -27,33 +27,82 @@ logger = logging.getLogger(__name__)
 
 
 @router.post("/upload-audio-assets", response_model=dict)
-async def upload_audio_assets_route(force: bool = False) -> dict[str, Any]:
+async def trigger_audio_asset_upload(force: bool = False) -> dict[str, Any]:
     """Expose audio upload helper via API."""
 
-    return await upload_audio_assets(force=force)
+    logger.info("POST /heygen/upload-audio-assets invoked (force=%s)", force)
+    try:
+        result = await upload_audio_assets(force=force)
+    except HTTPException as http_error:
+        logger.warning(
+            "HeyGen audio asset upload failed (status=%s detail=%s)",
+            http_error.status_code,
+            http_error.detail,
+        )
+        raise
+    except Exception:
+        logger.exception("Unexpected error while uploading HeyGen audio assets")
+        raise
+
+    logger.info(
+        "POST /heygen/upload-audio-assets completed (assets=%d)",
+        len(result.get("assets", [])),
+    )
+    return result
 
 
 @router.post("/generate-video", response_model=HeyGenVideoResponse)
-async def create_video_jobs(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
+async def generate_heygen_videos(request: HeyGenVideoRequest) -> HeyGenVideoResponse:
     if not settings.HEYGEN_API_KEY:
+        logger.error("HeyGen API key missing for generate-video request")
         raise HTTPException(status_code=400, detail="HEYGEN_API_KEY is not configured.")
 
-    return await heygen_controller.generate_video_batch(
-        request.script,
-        force_upload=request.force_upload,
+    logger.info(
+        "POST /heygen/generate-video invoked (script_length=%d force_upload=%s)",
+        len(request.script or ""),
+        request.force_upload,
     )
+    try:
+        response = await heygen_controller.generate_video_batch(
+            request.script,
+            force_upload=request.force_upload,
+        )
+    except HTTPException as http_error:
+        logger.warning(
+            "HeyGen video generation failed (status=%s detail=%s)",
+            http_error.status_code,
+            http_error.detail,
+        )
+        raise
+    except Exception:
+        logger.exception("Unexpected error during HeyGen video generation")
+        raise
+
+    logger.info(
+        "POST /heygen/generate-video completed (status=%s results=%d)",
+        response.status,
+        len(response.results),
+    )
+    return response
 
 
 @router.post("/avatar-iv/generate", response_model=HeyGenAvatarVideoResponse)
-async def create_avatar_iv_video(
+async def generate_avatar_iv_video(
     request: HeyGenAvatarVideoRequest,
 ) -> HeyGenAvatarVideoResponse:
     if not settings.HEYGEN_API_KEY:
+        logger.error("HeyGen API key missing for avatar-IV request")
         raise HTTPException(status_code=400, detail="HEYGEN_API_KEY is not configured.")
 
+    logger.info(
+        "POST /heygen/avatar-iv/generate invoked (force_upload_audio=%s image_key=%s)",
+        request.force_upload_audio,
+        request.image_asset_id,
+    )
     assets_result = await upload_audio_assets(force=request.force_upload_audio)
     assets = assets_result.get("assets", [])
     if not assets:
+        logger.warning("Avatar IV generation failed: no audio assets available")
         raise HTTPException(
             status_code=404,
             detail="No HeyGen audio assets found. Generate narration audio first.",
@@ -81,11 +130,11 @@ async def create_avatar_iv_video(
     try:
         agent_output_raw = await heygen_avatar_agent.run(envelope)
         prompts = HeyGenAvatarAgentOutput.model_validate_json(agent_output_raw.output)
-    except (ValidationError, json.JSONDecodeError) as exc:
-        logger.warning("HeyGen avatar agent output invalid: %s", exc)
+    except (ValidationError, json.JSONDecodeError) as validation_error:
+        logger.warning("HeyGen avatar agent output invalid: %s", validation_error)
         prompts = heygen_controller.fallback_avatar_prompts(request)
-    except Exception as exc:  # pragma: no cover - defensive
-        logger.warning("HeyGen avatar agent failed: %s", exc)
+    except Exception as agent_error:  # pragma: no cover - defensive
+        logger.warning("HeyGen avatar agent failed: %s", agent_error)
         prompts = heygen_controller.fallback_avatar_prompts(request)
 
     if request.orientation_hint and prompts.video_orientation != request.orientation_hint:
@@ -110,7 +159,12 @@ async def create_avatar_iv_video(
 
     try:
         job = heygen_controller._submit_avatar_iv_job(payload)
-    except HTTPException as exc:
+    except HTTPException as http_error:
+        logger.warning(
+            "HeyGen avatar IV submission failed (status=%s detail=%s)",
+            http_error.status_code,
+            http_error.detail,
+        )
         return HeyGenAvatarVideoResponse(
             status="failed",
             job={},
@@ -118,9 +172,14 @@ async def create_avatar_iv_video(
             audio_asset_id=resolved_audio_asset_id,
             audio_reference=resolved_audio_alias,
             request_payload=payload,
-            errors=[str(exc.detail)],
+            errors=[str(http_error.detail)],
         )
 
+    logger.info(
+        "POST /heygen/avatar-iv/generate completed (job_id=%s audio_asset_id=%s)",
+        (job.get("data") or {}).get("video_id"),
+        resolved_audio_asset_id,
+    )
     return HeyGenAvatarVideoResponse(
         status="success",
         job=job,

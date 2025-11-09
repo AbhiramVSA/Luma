@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ HEYGEN_UPLOAD_URL = "https://upload.heygen.com/v1/asset"
 AUDIO_DIRECTORY = Path("generated_audio")
 ASSET_CACHE_PATH = AUDIO_DIRECTORY / "heygen_assets.json"
 AUDIO_MANIFEST_PATH = AUDIO_DIRECTORY / "scene_audio_map.json"
+
+logger = logging.getLogger(__name__)
 
 
 def _load_cached_assets() -> dict[str, Any]:
@@ -114,6 +117,13 @@ def _upload_single_audio(file_path: Path, scene_id: str | None) -> dict[str, Any
             detail=f"HeyGen upload returned no asset ID for {file_path.name}.",
         )
 
+    logger.info(
+        "Uploaded HeyGen audio asset (file=%s scene_id=%s asset_id=%s)",
+        file_path.name,
+        scene_id,
+        data.get("id"),
+    )
+
     return {
         "file_name": file_path.name,
         "asset_id": data["id"],
@@ -129,6 +139,7 @@ def _list_audio_files() -> list[Path]:
     """Enumerate audio files awaiting upload, enforcing a helpful error if missing."""
 
     if not AUDIO_DIRECTORY.exists():
+        logger.warning("HeyGen audio upload requested but 'generated_audio' directory missing")
         raise HTTPException(
             status_code=404,
             detail="No audio files found. Directory 'generated_audio' does not exist.",
@@ -143,6 +154,7 @@ def _list_audio_files() -> list[Path]:
     )
 
     if not files:
+        logger.warning("HeyGen audio upload requested but no audio files found")
         raise HTTPException(
             status_code=404,
             detail="No audio files found in 'generated_audio'.",
@@ -161,16 +173,26 @@ async def upload_audio_assets(force: bool = False) -> dict[str, Any]:
         Mapping of local audio files to HeyGen asset identifiers and metadata.
     """
 
+    logger.info("Starting HeyGen audio asset upload (force=%s)", force)
+
     if not settings.HEYGEN_API_KEY:
+        logger.error("HEYGEN_API_KEY is not configured; cannot upload audio assets")
         raise HTTPException(status_code=400, detail="HEYGEN_API_KEY is not configured.")
 
     audio_files = _list_audio_files()
     asset_cache = _load_cached_assets()
     scene_manifest = _load_scene_manifest()
 
+    logger.info(
+        "Resolved %d audio files for upload (cached=%d)",
+        len(audio_files),
+        len(asset_cache),
+    )
+
     if scene_manifest:
         manifest_file_names = set(scene_manifest.keys())
         audio_files = [file for file in audio_files if file.name in manifest_file_names]
+        logger.debug("Filtered audio files using scene manifest (remaining=%d)", len(audio_files))
 
     uploaded_assets: list[dict[str, Any]] = []
 
@@ -179,6 +201,9 @@ async def upload_audio_assets(force: bool = False) -> dict[str, Any]:
         scene_id = _resolve_scene_id(audio_file, scene_manifest)
 
         if not scene_id:
+            logger.error(
+                "Unable to determine scene identifier for audio file '%s'", audio_file.name
+            )
             raise HTTPException(
                 status_code=400,
                 detail=f"Unable to determine scene identifier for audio file '{audio_file.name}'.",
@@ -190,6 +215,7 @@ async def upload_audio_assets(force: bool = False) -> dict[str, Any]:
                 cached_asset = {**cached_asset, "scene_id": scene_id}
                 asset_cache[cache_key] = cached_asset
             uploaded_assets.append(cached_asset)
+            logger.debug("Reusing cached HeyGen asset for %s", audio_file.name)
             continue
 
         asset_info = _upload_single_audio(audio_file, scene_id)
@@ -197,6 +223,12 @@ async def upload_audio_assets(force: bool = False) -> dict[str, Any]:
         uploaded_assets.append(asset_info)
 
     _save_cached_assets(asset_cache)
+
+    logger.info(
+        "Completed HeyGen audio asset upload (uploaded=%d total_assets=%d)",
+        sum(1 for asset in uploaded_assets if asset.get("asset_id")),
+        len(asset_cache),
+    )
 
     return {
         "status": "success",

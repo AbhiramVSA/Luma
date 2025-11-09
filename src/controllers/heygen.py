@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 import textwrap
 from pathlib import Path
@@ -22,6 +23,8 @@ from models.heygen import (
     HeyGenVideoResult,
 )
 from utils.agents import heygen_agent
+
+logger = logging.getLogger(__name__)
 
 HEYGEN_GENERATE_URL = "https://api.heygen.com/v2/video/generate"
 HEYGEN_STATUS_URL = "https://api.heygen.com/v1/video_status.get"
@@ -243,6 +246,14 @@ def _submit_video_job(payload: dict[str, Any]) -> dict[str, Any]:
         "Content-Type": "application/json",
     }
 
+    audio_asset_id = None
+    try:
+        audio_asset_id = payload.get("video_inputs", [{}])[0].get("voice", {}).get("audio_asset_id")
+    except (IndexError, AttributeError):  # pragma: no cover - defensive
+        audio_asset_id = None
+
+    logger.info("Submitting HeyGen video job (audio_asset_id=%s)", audio_asset_id)
+
     response = requests.post(
         HEYGEN_GENERATE_URL,
         json=payload,
@@ -255,12 +266,18 @@ def _submit_video_job(payload: dict[str, Any]) -> dict[str, Any]:
 
     data = response.json()
     if data.get("code") == 100:
+        logger.info("HeyGen video job accepted (audio_asset_id=%s)", audio_asset_id)
         return data
 
     video_id = (data.get("data") or {}).get("video_id")
     if data.get("error") in (None, "", {}) and video_id:
         data.setdefault("code", 100)
         data.setdefault("message", "Success")
+        logger.info(
+            "HeyGen video job accepted with inferred success (audio_asset_id=%s video_id=%s)",
+            audio_asset_id,
+            video_id,
+        )
         return data
 
     raise HTTPException(status_code=500, detail=data.get("message") or data.get("error") or data)
@@ -274,6 +291,12 @@ def _submit_avatar_iv_job(payload: dict[str, Any]) -> dict[str, Any]:
         "Content-Type": "application/json",
         "accept": "application/json",
     }
+
+    logger.info(
+        "Submitting HeyGen avatar IV job (image_key=%s audio_asset_id=%s)",
+        payload.get("image_key"),
+        payload.get("audio_asset_id"),
+    )
 
     response = requests.post(
         HEYGEN_AVATAR_IV_URL,
@@ -298,6 +321,11 @@ def _submit_avatar_iv_job(payload: dict[str, Any]) -> dict[str, Any]:
     if code not in (0, 100, None) and (data.get("error") or error_message):
         raise HTTPException(status_code=502, detail=error_message or data.get("error"))
 
+    logger.info(
+        "HeyGen avatar IV job accepted (status_code=%s message=%s)",
+        data.get("code"),
+        error_message or data.get("message"),
+    )
     return data
 
 
@@ -378,6 +406,12 @@ def _fetch_video_status(
         last_payload = payload
         status_value = ((payload.get("data") or {}).get("status") or "").lower()
         if status_value in {"completed", "failed"}:
+            logger.info(
+                "Video status poll completed (video_id=%s status=%s attempts=%d)",
+                video_id,
+                status_value,
+                attempt + 1,
+            )
             return payload
 
         if attempt < max_attempts - 1:
@@ -385,6 +419,11 @@ def _fetch_video_status(
 
             time.sleep(interval_seconds)
 
+    logger.warning(
+        "Video status poll exhausted attempts (video_id=%s attempts=%d)",
+        video_id,
+        max_attempts,
+    )
     return last_payload or {}
 
 
@@ -396,31 +435,58 @@ async def generate_video_batch(
 ) -> HeyGenVideoResponse:
     """Generate HeyGen videos for each scene in the script via the automation agent."""
 
+    logger.info(
+        "Starting HeyGen video batch generation (force_upload=%s assets_provided=%s)",
+        force_upload,
+        assets is not None,
+    )
+
     if not settings.HEYGEN_API_KEY:
+        logger.error("HEYGEN_API_KEY is not configured; aborting video batch generation")
         raise HTTPException(status_code=400, detail="HEYGEN_API_KEY is not configured.")
 
     if assets is None:
-        asset_payload = await upload_audio_assets(force=force_upload)
-        assets = asset_payload.get("assets", [])
+        upload_result = await upload_audio_assets(force=force_upload)
+        assets = upload_result.get("assets", [])
 
-    if not assets:
+    # Filter to the shape expected by downstream helpers, guarding against None or stray types.
+    resolved_assets: list[dict[str, Any]] = [
+        asset_entry for asset_entry in (assets or []) if isinstance(asset_entry, dict)
+    ]
+
+    logger.info(
+        "Resolved %d HeyGen audio assets for video generation",
+        len(resolved_assets),
+    )
+
+    if not resolved_assets:
+        logger.warning("No HeyGen audio assets available for video generation")
         raise HTTPException(
             status_code=404,
             detail="No HeyGen audio assets found. Generate narration audio first.",
         )
 
-    asset_lookup = _build_asset_lookup(assets)
-    agent_input = _prepare_agent_input(script, assets)
+    asset_lookup = _build_asset_lookup(resolved_assets)
+    agent_input = _prepare_agent_input(script, resolved_assets)
 
     try:
         agent_output_raw = await heygen_agent.run(agent_input)
         structured = HeyGenStructuredOutput.model_validate_json(agent_output_raw.output)
-    except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=f"Invalid HeyGen agent output: {exc}") from exc
-    except json.JSONDecodeError as exc:
-        raise HTTPException(status_code=422, detail="HeyGen agent returned invalid JSON.") from exc
-    except Exception as exc:  # pragma: no cover - defensive
-        raise HTTPException(status_code=500, detail=f"HeyGen agent failed: {exc}") from exc
+    except ValidationError as error:
+        logger.warning("HeyGen agent validation failed: %s", error)
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid HeyGen agent output: {error}",
+        ) from error
+    except json.JSONDecodeError as error:
+        logger.warning("HeyGen agent returned invalid JSON: %s", error)
+        raise HTTPException(
+            status_code=422,
+            detail="HeyGen agent returned invalid JSON.",
+        ) from error
+    except Exception as error:  # pragma: no cover - defensive
+        logger.exception("HeyGen agent execution failed")
+        raise HTTPException(status_code=500, detail=f"HeyGen agent failed: {error}") from error
 
     results: list[HeyGenVideoResult] = []
     missing_assets: list[str] = []
@@ -432,8 +498,17 @@ async def generate_video_batch(
 
         if not scene.audio_asset_id:
             missing_assets.append(scene.scene_id)
+            logger.warning(
+                "No audio asset found for scene %s; skipping video submission",
+                scene.scene_id,
+            )
             continue
 
+        logger.info(
+            "Submitting HeyGen video for scene %s (audio_asset_id=%s)",
+            scene.scene_id,
+            scene.audio_asset_id,
+        )
         payload = {
             "dimension": {
                 "width": 720,
@@ -455,8 +530,8 @@ async def generate_video_batch(
 
         try:
             response_json = _submit_video_job(payload)
-        except HTTPException as exc:
-            errors.append(f"{scene.scene_id}: {exc.detail}")
+        except HTTPException as http_error:
+            errors.append(f"{scene.scene_id}: {http_error.detail}")
             results.append(
                 HeyGenVideoResult(
                     scene_id=scene.scene_id,
@@ -464,7 +539,7 @@ async def generate_video_batch(
                     video_id=None,
                     video_url=None,
                     thumbnail_url=None,
-                    message=str(exc.detail),
+                    message=str(http_error.detail),
                     request_payload=payload,
                     status_detail=None,
                 ),
@@ -481,9 +556,9 @@ async def generate_video_batch(
         if video_id:
             try:
                 status_payload = _fetch_video_status(video_id)
-            except HTTPException as status_exc:
-                errors.append(f"{scene.scene_id}: {status_exc.detail}")
-                message = f"Video status lookup failed: {status_exc.detail}"
+            except HTTPException as status_error:
+                errors.append(f"{scene.scene_id}: {status_error.detail}")
+                message = f"Video status lookup failed: {status_error.detail}"
             else:
                 data_section = status_payload.get("data") or {}
                 status_value = (data_section.get("status") or "").lower()
@@ -523,12 +598,27 @@ async def generate_video_batch(
             ),
         )
 
+        logger.info(
+            "HeyGen scene processing finished (scene=%s status=%s message=%s)",
+            scene.scene_id,
+            result_status,
+            message,
+        )
+
     if results and not missing_assets and not errors:
         status = "success"
     elif results:
         status = "partial"
     else:
         status = "failed"
+
+    logger.info(
+        "Completed HeyGen video batch (status=%s results=%d missing=%d errors=%d)",
+        status,
+        len(results),
+        len(missing_assets),
+        len(errors),
+    )
 
     return HeyGenVideoResponse(
         status=status,

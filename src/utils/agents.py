@@ -9,6 +9,7 @@ from config.config import settings
 BASE_DIR = Path(__file__).resolve().parent
 PROMPTS_DIR = BASE_DIR.parent / "prompts"
 ELEVENLABS_PROMPT_PATH = PROMPTS_DIR / "elevenlabs_prompt.md"
+ELEVENLABS_LONGFORM_PROMPT_PATH = PROMPTS_DIR / "elevenlabs_longform_prompt.md"
 HEYGEN_PROMPT_PATH = PROMPTS_DIR / "heygen_prompt.md"
 FREEPIK_PROMPT_PATH = PROMPTS_DIR / "freepik_prompt.md"
 HEYGEN_AVATAR_PROMPT_PATH = PROMPTS_DIR / "heygen_avatar_prompt.md"
@@ -26,6 +27,12 @@ model = OpenAIChatModel(model_name="gpt-5", provider=provider)
 
 # Agent for Eleven Labs
 audio_agent = Agent(model=model, system_prompt=load_prompt(ELEVENLABS_PROMPT_PATH))
+
+# Agent for Eleven Labs long-form narration
+longform_audio_agent = Agent(
+    model=model,
+    system_prompt=load_prompt(ELEVENLABS_LONGFORM_PROMPT_PATH),
+)
 
 # Agent for Heygen
 heygen_agent = Agent(model=model, system_prompt=load_prompt(HEYGEN_PROMPT_PATH))

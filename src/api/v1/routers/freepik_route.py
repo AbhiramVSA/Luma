@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from uuid import UUID
 
 import requests
@@ -25,13 +26,21 @@ from models.freepik_model import (
     FreepikVideoTaskResponse,
 )
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter()
 
 
 @router.post("/image-to-video/kling-v2-1-std", response_model=FreepikVideoTaskResponse)
-async def create_kling_video_task(
+async def submit_kling_video_task(
     request: FreepikImageToVideoGenerationRequest,
 ) -> FreepikVideoTaskResponse:
+    logger.info(
+        "POST /freepik/image-to-video/kling-v2-1-std invoked (duration=%s webhook=%s)",
+        request.duration,
+        bool(request.webhook_url),
+    )
+
     prompt_bundle = await generate_prompt_bundle(request)
 
     video_request = FreepikImageToVideoRequest(
@@ -59,13 +68,23 @@ async def create_kling_video_task(
             headers=_build_request_headers(),
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
-    except requests.RequestException as exc:  # pragma: no cover - network failures
-        raise HTTPException(status_code=502, detail=f"Freepik API request failed: {exc}") from exc
+    except requests.RequestException as request_error:  # pragma: no cover - network failures
+        logger.warning("Freepik task submission request exception: %s", request_error)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Freepik API request failed: {request_error}",
+        ) from request_error
 
     parsed_response = _parse_task_response(response)
 
     applied_cfg_scale = payload.get("cfg_scale", prompt_bundle.cfg_scale)
     applied_duration = payload.get("duration", prompt_bundle.duration)
+
+    logger.info(
+        "POST /freepik/image-to-video/kling-v2-1-std completed (task_id=%s status=%s)",
+        parsed_response.data.task_id,
+        parsed_response.data.status,
+    )
 
     return FreepikVideoTaskResponse(
         data=parsed_response.data,
@@ -79,7 +98,7 @@ async def create_kling_video_task(
 
 
 @router.get("/image-to-video/kling-v2-1/{task_id}", response_model=FreepikImageToVideoResponse)
-async def fetch_kling_video_status(
+async def retrieve_kling_video_status(
     task_id: UUID,
     wait_for_completion: bool = False,
     poll_interval: float = DEFAULT_POLL_INTERVAL_SECONDS,
@@ -87,6 +106,13 @@ async def fetch_kling_video_status(
     download: bool = False,
     asset_index: int = 0,
 ):
+    logger.info(
+        "GET /freepik/image-to-video/kling-v2-1/%s invoked (wait=%s download=%s)",
+        task_id,
+        wait_for_completion,
+        download,
+    )
+
     if poll_interval <= 0:
         poll_interval = DEFAULT_POLL_INTERVAL_SECONDS
     if timeout <= 0:
@@ -99,9 +125,19 @@ async def fetch_kling_video_status(
     )
 
     if not download:
+        logger.info(
+            "GET /freepik/image-to-video/kling-v2-1/%s completed (status=%s)",
+            task_id,
+            task_status.data.status,
+        )
         return task_status
 
     if task_status.data.status.upper() != "COMPLETED":
+        logger.warning(
+            "Download requested before completion for task %s (status=%s)",
+            task_id,
+            task_status.data.status,
+        )
         raise HTTPException(
             status_code=409, detail="Task is not completed yet; cannot download video."
         )
@@ -117,4 +153,9 @@ async def fetch_kling_video_status(
             status_code=400, detail="asset_index is out of range for the generated results."
         )
 
+    logger.info(
+        "Streaming generated video for task %s (asset_index=%d)",
+        task_id,
+        asset_index,
+    )
     return _stream_generated_video(task_id, str(generated_assets[asset_index]))

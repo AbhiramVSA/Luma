@@ -206,10 +206,16 @@ async def save_scene_image(scene_id: str, file: UploadFile) -> dict[str, str]:
 
     slug = scene_id.strip()
     if not slug:
+        logger.warning("Scene image upload rejected: missing scene_id")
         raise HTTPException(status_code=400, detail="scene_id is required")
 
     suffix = Path(file.filename or "").suffix.lower()
     if suffix not in ALLOWED_IMAGE_EXTENSIONS:
+        logger.warning(
+            "Scene image upload rejected (scene_id=%s filename=%s): unsupported extension",
+            scene_id,
+            file.filename,
+        )
         raise HTTPException(
             status_code=400,
             detail="Unsupported image format. Use JPG, JPEG, PNG, or WEBP.",
@@ -217,8 +223,14 @@ async def save_scene_image(scene_id: str, file: UploadFile) -> dict[str, str]:
 
     content = await file.read()
     if not content:
+        logger.warning("Scene image upload rejected (scene_id=%s): empty file", scene_id)
         raise HTTPException(status_code=400, detail="Uploaded image is empty.")
     if len(content) > MAX_IMAGE_BYTES:
+        logger.warning(
+            "Scene image upload rejected (scene_id=%s filename=%s): exceeds size limit",
+            scene_id,
+            file.filename,
+        )
         raise HTTPException(status_code=400, detail="Image exceeds 10 MB limit.")
 
     safe_slug = "".join(ch if ch.isalnum() or ch in {"_", "-"} else "-" for ch in slug.lower())
@@ -229,6 +241,12 @@ async def save_scene_image(scene_id: str, file: UploadFile) -> dict[str, str]:
     destination = IMAGES_DIR / filename
     destination.write_bytes(content)
 
+    logger.info(
+        "Stored scene image (scene_id=%s filename=%s size_bytes=%d)",
+        scene_id,
+        filename,
+        len(content),
+    )
     return {
         "url": f"/generated_assets/images/{filename}",
         "file_name": filename,
@@ -240,6 +258,13 @@ async def orchestrate_creatomate_render(
 ) -> CreatomateRenderResponse:
     _require_creatomate_key()
 
+    logger.info(
+        "Starting Creatomate orchestration (template_hint=%s scenes=%d wait_for_render=%s)",
+        request.template_id or settings.CREATOMATE_DEFAULT_TEMPLATE_ID or "auto",
+        len(request.scenes),
+        request.wait_for_render,
+    )
+
     script_config, audio_payload = await synthesize_audio_assets(request.script)
     if isinstance(audio_payload, dict):
         raw_audio_outputs = audio_payload.get("outputs", [])
@@ -250,6 +275,8 @@ async def orchestrate_creatomate_render(
     else:
         audio_outputs = []
 
+    logger.info("Synthesised scene audio (clips=%d)", len(audio_outputs))
+
     assets_payload = await upload_audio_assets(force=request.force_upload_audio)
     if isinstance(assets_payload, dict):
         asset_candidates = assets_payload.get("assets", [])
@@ -259,6 +286,8 @@ async def orchestrate_creatomate_render(
             asset_list = []
     else:
         asset_list = []
+
+    logger.info("Resolved HeyGen assets for Creatomate render (assets=%d)", len(asset_list))
 
     heygen_response = await heygen_controller.generate_video_batch(
         request.script,
@@ -273,10 +302,13 @@ async def orchestrate_creatomate_render(
     ]
 
     if not completed_results:
+        logger.error("No completed HeyGen videos available for Creatomate render")
         raise HTTPException(
             status_code=502,
             detail="No completed HeyGen videos available for Creatomate render.",
         )
+
+    logger.info("HeyGen video batch completed (completed_results=%d)", len(completed_results))
 
     scene_order_map: dict[str, int] = {
         scene.scene_id: index + 1 for index, scene in enumerate(script_config.scenes)
@@ -336,15 +368,18 @@ async def orchestrate_creatomate_render(
         agent_response = await creatomate_agent.run(agent_brief)
         agent_output = CreatomateAgentOutput.model_validate_json(agent_response.output)
     except (ValidationError, json.JSONDecodeError) as exc:
+        logger.warning("Creatomate agent validation failed: %s", exc)
         raise HTTPException(
             status_code=502,
             detail=f"Creatomate agent output invalid: {exc}",
         ) from exc
     except Exception as exc:  # pragma: no cover - defensive
+        logger.exception("Creatomate agent execution failed")
         raise HTTPException(status_code=500, detail=f"Creatomate agent failed: {exc}") from exc
 
     render_template_id = agent_output.template_id or template_hint
     if not render_template_id:
+        logger.error("Creatomate agent did not provide a template id")
         raise HTTPException(
             status_code=400,
             detail="Creatomate agent did not specify a template_id.",
@@ -373,6 +408,12 @@ async def orchestrate_creatomate_render(
             error_messages.append(f"Missing HeyGen audio assets for scenes: {missing}")
     if overall_status != "success":
         error_messages.append("Creatomate render did not complete successfully.")
+
+    logger.info(
+        "Creatomate orchestration finished (status=%s errors=%d)",
+        overall_status,
+        len(error_messages),
+    )
 
     return CreatomateRenderResponse(
         status=overall_status,

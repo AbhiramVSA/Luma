@@ -11,7 +11,7 @@ Luma provides a comprehensive video generation pipeline that automates the compl
 - **AI-Powered Scene Analysis**: GPT-powered agents parse scripts, extract dialogue, and intelligently map assets to scenes
 - **Professional Voice Synthesis**: ElevenLabs text-to-speech generates natural, expressive audio with multi-character support
 - **Automated Video Production**: HeyGen talking photo integration produces synchronized video content with customizable avatars
-- **Intelligent Asset Management**: UUID-based audio file naming ensures unique identifiers while maintaining scene relationships
+- **Intelligent Asset Management**: UUID-based audio file naming ensures unique identifiers while maintaining scene relationships, while sanitized asset filtering prevents malformed entries from entering the pipeline
 - **Production-Grade API**: RESTful architecture with comprehensive validation, error handling, and status tracking
 - **Operator Console**: Next.js frontend provides dashboards for managing audio, video, and asset workflows
 
@@ -356,6 +356,42 @@ Manually upload audio files to HeyGen without generating video.
 
 ---
 
+### 5. Freepik Image-to-Video (Kling v2.1)
+
+**Endpoints:**
+- `POST /api/v1/freepik/image-to-video/kling-v2-1-std`
+- `GET /api/v1/freepik/image-to-video/kling-v2-1/{task_id}`
+
+Use Freepik's Kling v2.1 standard model to transform static imagery into motion video clips. Prompt bundles are generated server-side so downstream requests always include validated prompt text, duration, and CFG scale values.
+
+#### Submission Request
+
+```json
+{
+  "image": "base64-encoded image bytes or remote URL",
+  "duration": 5,
+  "webhook_url": "https://example.com/webhooks/freepik",
+  "cfg_scale": 7.5,
+  "static_mask": null,
+  "dynamic_masks": null
+}
+```
+
+`duration`, `cfg_scale`, `static_mask`, and `dynamic_masks` are optional; when omitted the controller applies values returned by the prompt bundle generator. A successful submission returns the Freepik task id together with the prompt bundle that was applied.
+
+#### Status & Downloads
+
+`GET /api/v1/freepik/image-to-video/kling-v2-1/{task_id}` accepts optional query parameters:
+- `wait_for_completion` (bool) — Poll until the task finishes before responding
+- `poll_interval` (float) — Seconds between poll attempts (defaults to controller constants)
+- `timeout` (float) — Maximum seconds to poll before timing out
+- `download` (bool) — Stream the rendered asset back to the client when the task is complete
+- `asset_index` (int) — Select a specific asset when multiple results are returned
+
+When `download=true`, the endpoint validates completion status and returns a streaming response for the requested asset.
+
+---
+
 ## Architecture
 
 ### Project Structure
@@ -389,13 +425,18 @@ Luma/
 │   ├── api/v1/
 │   │   ├── api.py                    # Main API aggregator
 │   │   └── routers/
-│   │       ├── elevenlabs_route.py   # Audio generation endpoints
-│   │       ├── heygen.py             # Video generation endpoints
-│   │       └── heygen_route.py       # Compatibility layer
+│   │       ├── creatomate_route.py   # Creatomate render endpoints
+│   │       ├── elevenlabs_route.py   # ElevenLabs audio endpoints
+│   │       ├── freepik_route.py      # Freepik image-to-video endpoints
+│   │       └── heygen_route.py       # HeyGen video and avatar endpoints
 │   ├── config/
 │   │   └── config.py                 # Settings management (Pydantic)
 │   ├── controllers/
-│   │   └── generate_video.py        # HeyGen upload & asset orchestration
+│   │   ├── creatomate.py            # Creatomate orchestration helpers
+│   │   ├── elevenlabs.py            # ElevenLabs workflow helpers
+│   │   ├── freepik.py               # Freepik image-to-video orchestration
+│   │   ├── generate_video.py        # Shared upload helpers for HeyGen assets
+│   │   └── heygen.py                # HeyGen avatar + batch video controller
 │   ├── models/
 │   │   ├── elevenlabs.py            # Audio request/response schemas
 │   │   └── heygen.py                # Video request/response schemas

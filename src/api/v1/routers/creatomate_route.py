@@ -21,13 +21,31 @@ async def render_video(
 ) -> CreatomateRenderResponse:
     """Execute the full pipeline: audio -> HeyGen videos -> Creatomate render."""
 
+    logger.info(
+        "POST /creatomate/render invoked (template=%s scenes=%d wait_for_render=%s)",
+        request.template_id or "auto",
+        len(request.scenes),
+        request.wait_for_render,
+    )
     try:
-        return await orchestrate_creatomate_render(request)
-    except HTTPException:
+        response = await orchestrate_creatomate_render(request)
+    except HTTPException as exc:
+        logger.warning(
+            "Creatomate orchestration failed (status=%s detail=%s)",
+            exc.status_code,
+            exc.detail,
+        )
         raise
     except Exception as exc:  # pragma: no cover - defensive
         logger.exception("Creatomate orchestration failed: %%s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    logger.info(
+        "POST /creatomate/render completed (status=%s errors=%d)",
+        response.status,
+        len(response.errors),
+    )
+    return response
 
 
 @router.post("/upload-image")
@@ -36,4 +54,23 @@ async def upload_scene_image(
     file: Annotated[UploadFile, File(...)],
 ) -> dict[str, str]:
     """Accept a scene image upload and persist it for Creatomate rendering."""
-    return await save_scene_image(scene_id, file)
+    logger.info(
+        "POST /creatomate/upload-image invoked (scene_id=%s filename=%s)",
+        scene_id,
+        file.filename,
+    )
+    try:
+        response = await save_scene_image(scene_id, file)
+    except HTTPException as exc:
+        logger.warning(
+            "Creatomate image upload failed (status=%s detail=%s)",
+            exc.status_code,
+            exc.detail,
+        )
+        raise
+    except Exception:
+        logger.exception("Unexpected error during Creatomate image upload")
+        raise
+
+    logger.info("POST /creatomate/upload-image completed (scene_id=%s)", scene_id)
+    return response
