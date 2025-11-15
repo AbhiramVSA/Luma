@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import io
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 import webrtcvad
 from openai import AsyncOpenAI, OpenAIError
@@ -38,6 +39,34 @@ def _ensure_async_openai() -> AsyncOpenAI:
     return _openai_client
 
 
+def _extract_segments_payload(response: object) -> list[Any]:
+    segments = getattr(response, "segments", None)
+    if segments is None:
+        to_dict = getattr(response, "to_dict", None)
+        if callable(to_dict):
+            mapping = to_dict()
+            if isinstance(mapping, Mapping):
+                segments = mapping.get("segments")
+    if segments is None and isinstance(response, dict):
+        segments = response.get("segments")
+    return segments if isinstance(segments, list) else []
+
+
+def _coerce_to_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _coerce_to_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
 async def _transcribe_with_whisper(audio_bytes: bytes) -> list[TranscriptSegment]:
     """Run Whisper transcription via OpenAI and return timestamped segments."""
 
@@ -63,20 +92,14 @@ async def _transcribe_with_whisper(audio_bytes: bytes) -> list[TranscriptSegment
         logger.warning("Unexpected Whisper transcription error: %s", error)
         return []
 
-    payload = getattr(response, "segments", None)
-    if payload is None:
-        if hasattr(response, "to_dict"):
-            payload = response.to_dict().get("segments")
-        elif isinstance(response, dict):
-            payload = response.get("segments")
-
     segments: list[TranscriptSegment] = []
-    for raw_segment in payload or []:
-        text = _segment_field(raw_segment, "text", default="").strip()
+    for raw_segment in _extract_segments_payload(response):
+        text_value = _segment_field(raw_segment, "text", default="")
+        text = _coerce_to_str(text_value).strip()
         if not text:
             continue
-        start = float(_segment_field(raw_segment, "start", default=0.0))
-        end = float(_segment_field(raw_segment, "end", default=start))
+        start = _coerce_to_float(_segment_field(raw_segment, "start", default=0.0), 0.0)
+        end = _coerce_to_float(_segment_field(raw_segment, "end", default=start), start)
         segments.append(
             TranscriptSegment(
                 text=text,
@@ -88,7 +111,7 @@ async def _transcribe_with_whisper(audio_bytes: bytes) -> list[TranscriptSegment
     return segments
 
 
-def _segment_field(segment: object, key: str, default: float | str) -> float | str:
+def _segment_field(segment: object, key: str, default: Any) -> Any:
     if isinstance(segment, dict):
         return segment.get(key, default)
     return getattr(segment, key, default)
@@ -109,9 +132,12 @@ def _detect_vad_silence(audio_bytes: bytes) -> list[SilenceWindow]:
         return []
 
     pcm_data = mono_audio.raw_data
+    if pcm_data is None:
+        return []
+
     sample_width = mono_audio.sample_width
     frame_byte_length = int(VAD_SAMPLE_RATE * (VAD_FRAME_MS / 1000) * sample_width)
-    if frame_byte_length == 0 or len(pcm_data) < frame_byte_length:
+    if frame_byte_length <= 0 or len(pcm_data) < frame_byte_length:
         return []
 
     vad = webrtcvad.Vad(2)
