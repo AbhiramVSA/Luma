@@ -6,6 +6,7 @@ import base64
 import io
 import json
 import logging
+import math
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -23,27 +24,32 @@ from pydub import AudioSegment
 from pydub.silence import detect_silence
 
 from config.config import settings
-from models.elevenlabs_model import LongFormAudioPlan
+from models.elevenlabs_model import LongFormAudioPlan, PauseAdjustmentResponse
 from models.longform import (
     LongformScenesResponse,
     SceneProcessingSummary,
+    SceneTimingAnalysis,
     SegmentPausePlan,
 )
-from utils.agents import longform_audio_agent
+from utils.agents import longform_audio_agent, longform_splice_agent
+from utils.audio_analysis import analyze_scene_audio
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_PAUSE_SECONDS = 1.5
 SENTENCE_ENDINGS = {".", "?", "!", "।"}
+PAUSE_LABEL_PATTERN = r"(?:sec(?:onds?)?|secs?|s)"
 PAUSE_ANNOTATION_PATTERN = (
-    r"(?:[*_]{0,2})"
-    r"\(\s*(?P<pause>\d+(?:\.\d+)?)\s*(?:sec(?:onds?)?|s)\s*\)"
-    r"(?:[*_]{0,2})"
+    r"\*?\(?\s*(?:(?P<pause>\d+(?:\.\d+)?)\s*"
+    + PAUSE_LABEL_PATTERN
+    + r"\b|"
+    + PAUSE_LABEL_PATTERN
+    + r"\s*(?P<pause_alt>\d+(?:\.\d+)?))\s*\)?\*?"
 )
 
 EXPLICIT_PAUSE_PATTERN = re.compile(PAUSE_ANNOTATION_PATTERN, re.IGNORECASE)
 SENTENCE_PATTERN = re.compile(
-    r"(?P<sentence>.+?[\.?\?!।])\s*(?:" + PAUSE_ANNOTATION_PATTERN + r")?",
+    r"(?P<sentence>.+?[\.\?!।])\s*(?:" + PAUSE_ANNOTATION_PATTERN + r")?",
     re.IGNORECASE | re.DOTALL,
 )
 
@@ -84,6 +90,9 @@ SEGMENTATION_AGENT = Agent(
 
 AUDIO_FORMAT = "mp3"
 ELEVENLABS_TIMEOUT_SECONDS = 120
+SPLICE_AGENT_MAX_AUDIO_BYTES = 800_000
+PAUSE_DEVIATION_THRESHOLD = 0.2
+PAUSE_UPDATE_EPSILON = 1e-3
 
 
 def _is_scene_header(line: str) -> bool:
@@ -130,18 +139,33 @@ def _remove_pause_markers(text: str) -> str:
     return EXPLICIT_PAUSE_PATTERN.sub("", text)
 
 
+def _strip_inline_pause_labels(text: str) -> str:
+    tokens = [
+        "sec",
+        "secs",
+        "second",
+        "seconds",
+    ]
+    pattern = re.compile(r"\b(" + "|".join(tokens) + r")\b", re.IGNORECASE)
+    return pattern.sub("", text)
+
+
 def _extract_sentence_plan(scene_text: str) -> list[SegmentPausePlan]:
     segments: list[SegmentPausePlan] = []
     last_end = 0
 
     for match in SENTENCE_PATTERN.finditer(scene_text):
         sentence = match.group("sentence").strip()
-        pause_value = match.group("pause")
+        pause_value = match.group("pause") or match.group("pause_alt")
+
+        # First, completely remove ALL pause markers from the sentence text
+        cleaned_sentence = EXPLICIT_PAUSE_PATTERN.sub("", sentence).strip()
+
+        # Then determine the pause duration
         pause_seconds = float(pause_value) if pause_value is not None else 0.0
-        if pause_value is None and sentence and sentence[-1] in SENTENCE_ENDINGS:
+        if pause_value is None and cleaned_sentence and cleaned_sentence[-1] in SENTENCE_ENDINGS:
             pause_seconds = DEFAULT_PAUSE_SECONDS
 
-        cleaned_sentence = EXPLICIT_PAUSE_PATTERN.sub("", sentence).strip()
         if cleaned_sentence:
             segments.append(
                 SegmentPausePlan(text=cleaned_sentence, pause_after_seconds=pause_seconds)
@@ -150,16 +174,28 @@ def _extract_sentence_plan(scene_text: str) -> list[SegmentPausePlan]:
 
     remainder = scene_text[last_end:].strip()
     if remainder:
+        # Check if remainder has a pause annotation
+        pause_match = EXPLICIT_PAUSE_PATTERN.search(remainder)
+        pause_seconds = 0.0
+
+        if pause_match:
+            pause_match_value = pause_match.group("pause") or pause_match.group("pause_alt")
+            if pause_match_value is not None:
+                pause_seconds = float(pause_match_value)
+
         cleaned_remainder = EXPLICIT_PAUSE_PATTERN.sub("", remainder).strip()
+
         if cleaned_remainder:
-            pause_seconds = (
-                DEFAULT_PAUSE_SECONDS
-                if cleaned_remainder and cleaned_remainder[-1] in SENTENCE_ENDINGS
-                else 0.0
-            )
+            # If no explicit pause but ends with sentence ending, use default
+            if pause_seconds == 0.0 and cleaned_remainder[-1] in SENTENCE_ENDINGS:
+                pause_seconds = DEFAULT_PAUSE_SECONDS
             segments.append(
                 SegmentPausePlan(text=cleaned_remainder, pause_after_seconds=pause_seconds)
             )
+        elif pause_seconds > 0.0:
+            # If remainder was only a pause marker, apply it to the last segment
+            if segments:
+                segments[-1].pause_after_seconds = pause_seconds
 
     if not segments:
         raise HTTPException(status_code=422, detail="No sentences detected within scene text.")
@@ -358,6 +394,139 @@ def _slice_and_pause(audio_bytes: bytes, plan: list[SegmentPausePlan]) -> bytes:
     return buffer.getvalue()
 
 
+def _build_clause_metrics(
+    plan: list[SegmentPausePlan],
+    timing_analysis: SceneTimingAnalysis | None,
+) -> list[dict[str, float | int | str | None]]:
+    if timing_analysis is None:
+        return []
+
+    metrics: list[dict[str, float | int | str | None]] = []
+    reports = timing_analysis.segments or []
+
+    for index, segment in enumerate(plan):
+        report = reports[index] if index < len(reports) else None
+        observed_pause_seconds = None
+        measured_start_ms = None
+        measured_end_ms = None
+        measured_pause_ms = None
+
+        if report is not None:
+            measured_start_ms = report.measured_start_ms
+            measured_end_ms = report.measured_end_ms
+            measured_pause_ms = report.measured_pause_ms
+            if measured_pause_ms is not None:
+                observed_pause_seconds = round(measured_pause_ms / 1000.0, 3)
+
+        metrics.append(
+            {
+                "clause_index": index,
+                "text": segment.text,
+                "target_pause_seconds": segment.pause_after_seconds,
+                "observed_pause_seconds": observed_pause_seconds,
+                "measured_start_ms": measured_start_ms,
+                "measured_end_ms": measured_end_ms,
+                "measured_pause_ms": measured_pause_ms,
+            }
+        )
+
+    return metrics
+
+
+def _needs_splice_review(metrics: list[dict[str, float | int | str | None]]) -> bool:
+    for metric in metrics:
+        observed = metric.get("observed_pause_seconds")
+        target = metric.get("target_pause_seconds")
+        if (
+            isinstance(observed, int | float)
+            and isinstance(target, int | float)
+            and abs(float(observed) - float(target)) > PAUSE_DEVIATION_THRESHOLD
+        ):
+            return True
+    return False
+
+
+async def _request_splice_adjustments(
+    scene_name: str,
+    plan: list[SegmentPausePlan],
+    timing_analysis: SceneTimingAnalysis | None,
+    audio_bytes: bytes,
+) -> dict[int, float]:
+    metrics = _build_clause_metrics(plan, timing_analysis)
+    if not metrics or not _needs_splice_review(metrics):
+        return {}
+
+    payload: dict[str, object] = {
+        "scene_id": scene_name,
+        "clauses": metrics,
+        "measurement_source": "whisper+vad",
+        "expected_clause_count": len(plan),
+    }
+
+    if timing_analysis is not None:
+        if timing_analysis.transcript_segments:
+            payload["transcript_segments"] = [
+                segment.model_dump() for segment in timing_analysis.transcript_segments
+            ]
+        if timing_analysis.silence_windows:
+            payload["silence_windows"] = [
+                window.model_dump() for window in timing_analysis.silence_windows
+            ]
+
+    if audio_bytes and len(audio_bytes) <= SPLICE_AGENT_MAX_AUDIO_BYTES:
+        payload["audio_base64"] = base64.b64encode(audio_bytes).decode("ascii")
+    else:
+        payload["audio_notice"] = {
+            "included": False,
+            "audio_size_bytes": len(audio_bytes) if audio_bytes else 0,
+            "reason": "audio payload exceeds limit" if audio_bytes else "no audio available",
+        }
+
+    try:
+        response = await longform_splice_agent.run(json.dumps(payload, ensure_ascii=False))
+    except Exception as error:  # pragma: no cover - external service
+        logger.warning("Splice agent failed for scene '%s': %s", scene_name, error)
+        return {}
+
+    try:
+        adjustments_payload = json.loads(response.output)
+        adjustments = PauseAdjustmentResponse.model_validate(adjustments_payload)
+    except (json.JSONDecodeError, ValidationError) as error:
+        logger.warning("Invalid splice agent payload for scene '%s': %s", scene_name, error)
+        return {}
+
+    return {item.clause_index: item.desired_pause_seconds for item in adjustments.adjustments}
+
+
+def _apply_pause_adjustments(
+    plan: list[SegmentPausePlan],
+    adjustments: dict[int, float],
+) -> tuple[list[SegmentPausePlan], bool]:
+    if not adjustments:
+        return plan, False
+
+    updated_plan: list[SegmentPausePlan] = []
+    changed = False
+
+    for index, segment in enumerate(plan):
+        override = adjustments.get(index)
+        if override is None:
+            updated_plan.append(segment)
+            continue
+
+        sanitized_pause = max(0.0, float(override))
+        if not math.isfinite(sanitized_pause):
+            sanitized_pause = segment.pause_after_seconds
+
+        if abs(sanitized_pause - segment.pause_after_seconds) > PAUSE_UPDATE_EPSILON:
+            changed = True
+            updated_plan.append(segment.model_copy(update={"pause_after_seconds": sanitized_pause}))
+        else:
+            updated_plan.append(segment)
+
+    return (updated_plan if changed else plan), changed
+
+
 async def _generate_scene_audio(scene_text: str, voice_id: str) -> bytes:
     if not settings.ELEVENLABS_API_KEY:
         raise HTTPException(status_code=400, detail="ELEVENLABS_API_KEY is not configured.")
@@ -507,6 +676,35 @@ async def process_longform_script(script: str) -> tuple[LongformScenesResponse, 
         final_plan = _validate_agent_plan(expected_plan, agent_segments, scene.name)
 
         processed_audio = _slice_and_pause(audio_bytes, final_plan)
+
+        try:
+            timing_analysis = await analyze_scene_audio(processed_audio, final_plan)
+        except Exception as error:  # pragma: no cover - diagnostic path
+            logger.warning("Timing analysis failed for scene '%s': %s", scene.name, error)
+            timing_analysis = None
+
+        adjustments = await _request_splice_adjustments(
+            scene.name,
+            final_plan,
+            timing_analysis,
+            processed_audio,
+        )
+
+        if adjustments:
+            updated_plan, changed = _apply_pause_adjustments(final_plan, adjustments)
+            if changed:
+                final_plan = updated_plan
+                processed_audio = _slice_and_pause(audio_bytes, final_plan)
+                try:
+                    timing_analysis = await analyze_scene_audio(processed_audio, final_plan)
+                except Exception as error:  # pragma: no cover - diagnostic path
+                    logger.warning(
+                        "Timing analysis failed after splice for scene '%s': %s",
+                        scene.name,
+                        error,
+                    )
+                    timing_analysis = None
+
         processed_scene_audio.append(processed_audio)
 
         summaries.append(
@@ -514,6 +712,7 @@ async def process_longform_script(script: str) -> tuple[LongformScenesResponse, 
                 scene_name=scene.name,
                 segments=final_plan,
                 processed_audio_path=_to_data_url(processed_audio),
+                timing_analysis=timing_analysis,
             )
         )
 

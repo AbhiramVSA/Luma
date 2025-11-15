@@ -821,6 +821,8 @@ dependencies = [
     { name = "pydantic-ai" },
     { name = "pydantic-settings" },
     { name = "pydub" },
+    { name = "setuptools" },
+    { name = "webrtcvad" },
 ]
 
 [package.dev-dependencies]
@@ -838,6 +840,8 @@ requires-dist = [
     { name = "pydantic-ai", specifier = ">=1.0.17" },
     { name = "pydantic-settings", specifier = ">=2.6.0,<2.11.0" },
     { name = "pydub", specifier = ">=0.25.1" },
+    { name = "setuptools", specifier = ">=70.0.0" },
+    { name = "webrtcvad", specifier = ">=2.0.10" },
 ]
 
 [package.metadata.requires-dev]
@@ -1963,6 +1967,15 @@ wheels = [
 ]
 
 [[package]]
+name = "setuptools"
+version = "80.9.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/18/5d/3bf57dcd21979b887f014ea83c24ae194cfcd12b9e0fda66b957c69d1fca/setuptools-80.9.0.tar.gz", hash = "sha256:f36b47402ecde768dbfafc46e8e4207b4360c654f1f3bb84475f0a28628fb19c", size = 1319958 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a3/dc/17031897dae0efacfea57dfd3a82fdd2a2aeb58e0ff71b77b87e44edc772/setuptools-80.9.0-py3-none-any.whl", hash = "sha256:062d34222ad13e0cc312a4c02d73f059e86a4acbfbdea8f8f76b28c99f306922", size = 1201486 },
+]
+
+[[package]]
 name = "shellingham"
 version = "1.5.4"
 source = { registry = "https://pypi.org/simple" }
@@ -2244,6 +2257,12 @@ sdist = { url = "https://files.pythonhosted.org/packages/24/30/6b0809f4510673dc7
 wheels = [
     { url = "https://files.pythonhosted.org/packages/af/b5/123f13c975e9f27ab9c0770f514345bd406d0e8d3b7a0723af9d43f710af/wcwidth-0.2.14-py2.py3-none-any.whl", hash = "sha256:a7bb560c8aee30f9957e5f9895805edd20602f2d7f720186dfd906e82b4982e1", size = 37286 },
 ]
+
+[[package]]
+name = "webrtcvad"
+version = "2.0.10"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/89/34/e2de2d97f3288512b9ea56f92e7452f8207eb5a0096500badf9dfd48f5e6/webrtcvad-2.0.10.tar.gz", hash = "sha256:f1bed2fb25b63fb7b1a55d64090c993c9c9167b28485ae0bcdd81cf6ede96aea", size = 66156 }
 
 [[package]]
 name = "websockets"

@@ -34,6 +34,10 @@ class SceneProcessingSummary(BaseModel):
     processed_audio_path: str = Field(
         ..., description="Data URL or temporary path referencing the processed scene audio."
     )
+    timing_analysis: SceneTimingAnalysis | None = Field(
+        default=None,
+        description="Measured Whisper/VAD timings for the processed scene, if available.",
+    )
 
 
 class LongformScenesResponse(BaseModel):
@@ -46,4 +50,56 @@ class LongformScenesResponse(BaseModel):
     final_audio_path: str = Field(
         ...,
         description="Data URL or temporary path referencing the fully stitched audio.",
+    )
+
+
+class TranscriptSegment(BaseModel):
+    """Single Whisper transcription chunk with timestamps."""
+
+    text: str = Field(..., description="Auto-transcribed text snippet.")
+    start_ms: int = Field(..., ge=0, description="Start timestamp in milliseconds.")
+    end_ms: int = Field(..., ge=0, description="End timestamp in milliseconds.")
+
+
+class SilenceWindow(BaseModel):
+    """Silence span detected by VAD."""
+
+    start_ms: int = Field(..., ge=0, description="Silence start in milliseconds.")
+    end_ms: int = Field(..., ge=0, description="Silence end in milliseconds.")
+    duration_ms: int = Field(..., ge=0, description="Total silence duration in milliseconds.")
+
+
+class SegmentTimingReport(BaseModel):
+    """Comparison of expected vs measured sentence timing."""
+
+    expected_text: str = Field(..., description="Sentence text requested from plan.")
+    expected_pause_seconds: float = Field(..., ge=0.0)
+    measured_start_ms: int | None = Field(
+        default=None,
+        description="Whisper-estimated speech start for this sentence, if aligned.",
+    )
+    measured_end_ms: int | None = Field(
+        default=None,
+        description="Whisper-estimated speech end for this sentence, if aligned.",
+    )
+    measured_pause_ms: int | None = Field(
+        default=None,
+        description="Observed pause following this sentence derived from Whisper/VAD.",
+    )
+
+
+class SceneTimingAnalysis(BaseModel):
+    """Aggregate timing diagnostics for a scene."""
+
+    segments: list[SegmentTimingReport] = Field(
+        default_factory=list,
+        description="Aligned timing data for each requested sentence.",
+    )
+    transcript_segments: list[TranscriptSegment] = Field(
+        default_factory=list,
+        description="Raw Whisper transcript spans with timestamps.",
+    )
+    silence_windows: list[SilenceWindow] = Field(
+        default_factory=list,
+        description="Detected VAD silence spans throughout the scene audio.",
     )

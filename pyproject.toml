@@ -13,6 +13,8 @@ dependencies = [
     "pydub>=0.25.1",
     "openai>=1.51.0",
     "audioop-lts>=0.2.0",
+    "webrtcvad>=2.0.10",
+    "setuptools>=70.0.0",
 ]
 
 [dependency-groups]
