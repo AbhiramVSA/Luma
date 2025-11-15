@@ -11,6 +11,8 @@ dependencies = [
     "pydantic-ai>=1.0.17",
     "pydantic-settings>=2.6.0,<2.11.0",
     "pydub>=0.25.1",
+    "openai>=1.51.0",
+    "audioop-lts>=0.2.0",
 ]
 
 [dependency-groups]

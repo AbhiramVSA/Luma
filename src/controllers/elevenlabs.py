@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import shutil
 import subprocess
 import tempfile
 from contextlib import suppress
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -16,24 +18,51 @@ from uuid import uuid4
 import requests
 from fastapi import HTTPException
 from pydantic import ValidationError
+from pydub import AudioSegment
 
 from config.config import settings
 from models.elevenlabs_model import (
     LongFormAudioPlan,
     LongFormAudioRequest,
+    PauseAdjustmentResponse,
+    SanitizedScene,
+    SanitizedSceneCollection,
     ScriptRequest,
 )
-from utils.agents import audio_agent, longform_audio_agent
+from utils.agents import (
+    audio_agent,
+    longform_audio_agent,
+    longform_sanitizer_agent,
+    longform_splice_agent,
+)
 
 OUTPUT_DIR = Path("generated_audio")
 AUDIO_MANIFEST_PATH = OUTPUT_DIR / "scene_audio_map.json"
 AUDIO_CACHE_PATH = OUTPUT_DIR / "heygen_assets.json"
 AUDIO_EXTENSIONS = {".mp3", ".wav", ".m4a", ".aac"}
 LONGFORM_MANIFEST_PREFIX = "longform_manifest"
-PUNCTUATION_PAUSE_SECONDS = 1.5
-PUNCTUATION_MARKS = {",", ".", "।"}
+DEFAULT_PUNCTUATION_PAUSES = {
+    ",": 0.5,
+    ".": 1.5,
+    "।": 1.5,
+    "?": 1.5,
+    "!": 1.5,
+}
+PUNCTUATION_MARKS = set(DEFAULT_PUNCTUATION_PAUSES)
+
+
+@dataclass
+class ClauseRenderSpec:
+    text: str | None
+    pause_seconds: float = 0.0
+
 
 logger = logging.getLogger(__name__)
+
+MAX_AGENT_AUDIO_BYTES = 750_000
+PAUSE_DEVIATION_THRESHOLD = 0.2
+SILENCE_DB_PADDING = 16
+SILENCE_ANALYSIS_STEP_MS = 10
 
 
 def _sanitize_component(value: str, fallback: str) -> str:
@@ -53,20 +82,213 @@ def _sanitize_scene_text(text: str) -> str:
     return cleaned
 
 
-def _split_text_into_clauses(text: str) -> list[tuple[str, bool]]:
-    clauses: list[tuple[str, bool]] = []
+def _split_text_into_clauses(text: str) -> list[tuple[str, str | None]]:
+    clauses: list[tuple[str, str | None]] = []
     buffer: list[str] = []
     for char in text:
         buffer.append(char)
         if char in PUNCTUATION_MARKS:
             clause = "".join(buffer).strip()
             if clause:
-                clauses.append((clause, True))
+                clauses.append((clause, char))
             buffer = []
     trailing = "".join(buffer).strip()
     if trailing:
-        clauses.append((trailing, False))
+        clauses.append((trailing, None))
     return clauses
+
+
+def _default_pause_for_punctuation(punctuation: str | None) -> float:
+    if not punctuation:
+        return 0.0
+    return DEFAULT_PUNCTUATION_PAUSES.get(punctuation, DEFAULT_PUNCTUATION_PAUSES.get(".", 1.5))
+
+
+def _clause_specs_from_fallback(text: str, enforce_comma_pause: bool) -> list[ClauseRenderSpec]:
+    clause_entries = _split_text_into_clauses(text) if enforce_comma_pause else [(text, None)]
+
+    specs: list[ClauseRenderSpec] = []
+    for clause_text, punctuation in clause_entries:
+        cleaned_clause = clause_text.strip()
+        if not cleaned_clause:
+            continue
+        specs.append(
+            ClauseRenderSpec(
+                text=cleaned_clause,
+                pause_seconds=_default_pause_for_punctuation(punctuation),
+            )
+        )
+
+    if not specs and text.strip():
+        specs.append(ClauseRenderSpec(text=text.strip(), pause_seconds=0.0))
+
+    return specs
+
+
+def _measure_trailing_silence_seconds(audio_path: Path) -> float:
+    audio = AudioSegment.from_file(audio_path)
+    if len(audio) == 0:
+        return 0.0
+
+    silence_thresh = audio.dBFS - SILENCE_DB_PADDING
+    trailing_ms = 0
+    reverse_cursor = len(audio)
+
+    while reverse_cursor > 0:
+        start = max(reverse_cursor - SILENCE_ANALYSIS_STEP_MS, 0)
+        chunk = audio[start:reverse_cursor]
+        if chunk.dBFS > silence_thresh:
+            break
+        trailing_ms += reverse_cursor - start
+        reverse_cursor = start
+
+    return trailing_ms / 1000.0
+
+
+def _assemble_clause_sequence(
+    clause_specs: list[ClauseRenderSpec],
+    clause_audio_paths: list[Path | None],
+    clause_trailing_silences: list[float],
+    pause_overrides: dict[int, float],
+    workspace: Path,
+    export_extension: str,
+) -> tuple[list[Path], list[Path], list[float], list[float]]:
+    sequence_paths: list[Path] = []
+    created_silence_paths: list[Path] = []
+    observed_pauses: list[float] = []
+    applied_desired_pauses: list[float] = []
+
+    for index, spec in enumerate(clause_specs):
+        audio_path = clause_audio_paths[index]
+        trailing_seconds = clause_trailing_silences[index] if audio_path else 0.0
+        desired_pause = pause_overrides.get(index, spec.pause_seconds)
+        applied_desired_pauses.append(desired_pause)
+
+        if audio_path is not None:
+            sequence_paths.append(audio_path)
+            inserted_pause = max(desired_pause - trailing_seconds, 0.0)
+            observed_pause = trailing_seconds + inserted_pause
+        else:
+            inserted_pause = desired_pause
+            observed_pause = inserted_pause
+
+        observed_pauses.append(observed_pause)
+
+        if inserted_pause > 0:
+            silence_path = workspace / f"pause_{index:03d}_{uuid4().hex[:8]}.{export_extension}"
+            _create_silence_segment(inserted_pause, silence_path, export_extension)
+            sequence_paths.append(silence_path)
+            created_silence_paths.append(silence_path)
+
+    return sequence_paths, created_silence_paths, observed_pauses, applied_desired_pauses
+
+
+def _cleanup_paths(paths: list[Path]) -> None:
+    for path in paths:
+        with suppress(OSError):
+            path.unlink()
+
+
+def _clause_specs_from_sanitized(scene: SanitizedScene) -> list[ClauseRenderSpec]:
+    specs: list[ClauseRenderSpec] = []
+    for clause in scene.clauses:
+        cleaned_text = clause.text.strip()
+        if cleaned_text:
+            specs.append(
+                ClauseRenderSpec(
+                    text=cleaned_text,
+                    pause_seconds=clause.pause_after_seconds,
+                )
+            )
+        elif clause.pause_after_seconds > 0:
+            specs.append(ClauseRenderSpec(text=None, pause_seconds=clause.pause_after_seconds))
+    return specs
+
+
+async def _run_sanitizer_agent(plan: LongFormAudioPlan) -> dict[str, SanitizedScene]:
+    if not plan.segments:
+        return {}
+
+    payload = {
+        "scenes": [
+            {
+                "scene_id": segment.segment_id,
+                "raw_text": segment.text,
+                "target_pause_after_seconds": segment.pause_after_seconds,
+                "enforce_comma_pause": getattr(segment, "enforce_comma_pause", True),
+            }
+            for segment in plan.segments
+        ]
+    }
+
+    try:
+        response = await longform_sanitizer_agent.run(json.dumps(payload, ensure_ascii=False))
+    except Exception as exc:  # pragma: no cover - external service
+        logger.warning("Sanitizer agent failed: %s", exc)
+        return {}
+
+    try:
+        sanitized_payload = json.loads(response.output)
+        collection = SanitizedSceneCollection.model_validate(sanitized_payload)
+    except (json.JSONDecodeError, ValidationError) as exc:
+        logger.warning("Sanitizer agent returned invalid payload: %s", exc)
+        return {}
+
+    sanitized_map: dict[str, SanitizedScene] = {}
+    for scene in collection.scenes:
+        sanitized_map[scene.scene_id] = scene
+    return sanitized_map
+
+
+async def _run_splice_agent(
+    segment_id: str,
+    sanitized_scene: SanitizedScene,
+    clause_metrics: list[dict[str, Any]],
+    audio_bytes: bytes,
+) -> dict[int, float]:
+    payload: dict[str, Any] = {
+        "scene_id": segment_id,
+        "clauses": [],
+    }
+
+    for metric in clause_metrics:
+        clause_index = int(metric.get("index", 0))
+        text = (
+            sanitized_scene.clauses[clause_index].text
+            if 0 <= clause_index < len(sanitized_scene.clauses)
+            else metric.get("text", "")
+        )
+        payload["clauses"].append(
+            {
+                "clause_index": clause_index,
+                "text": text,
+                "target_pause_seconds": metric.get("target", 0.0),
+                "observed_pause_seconds": metric.get("observed", 0.0),
+            }
+        )
+
+    if audio_bytes and len(audio_bytes) <= MAX_AGENT_AUDIO_BYTES:
+        payload["audio_base64"] = base64.b64encode(audio_bytes).decode("ascii")
+    else:
+        payload["audio_notice"] = {
+            "included": False,
+            "audio_size_bytes": len(audio_bytes) if audio_bytes else 0,
+        }
+
+    try:
+        response = await longform_splice_agent.run(json.dumps(payload, ensure_ascii=False))
+    except Exception as exc:  # pragma: no cover - external service
+        logger.warning("Splice agent failed for %s: %s", segment_id, exc)
+        return {}
+
+    try:
+        adjustments_payload = json.loads(response.output)
+        adjustments = PauseAdjustmentResponse.model_validate(adjustments_payload)
+    except (json.JSONDecodeError, ValidationError) as exc:
+        logger.warning("Splice agent returned invalid payload for %s: %s", segment_id, exc)
+        return {}
+
+    return {item.clause_index: item.desired_pause_seconds for item in adjustments.adjustments}
 
 
 def _get_ffmpeg_path() -> str:
@@ -471,21 +693,37 @@ async def synthesize_longform_audio(request: LongFormAudioRequest) -> dict[str, 
     export_format = plan.stitching_instructions.output_format or "mp3"
     export_extension = export_format.lower().lstrip(".") or "mp3"
 
+    sanitized_scene_map = await _run_sanitizer_agent(plan)
+
     for index, segment in enumerate(plan.segments):
-        segment_text = (segment.text or "").strip()
+        sanitized_scene = sanitized_scene_map.get(segment.segment_id)
+        if sanitized_scene:
+            segment_text = sanitized_scene.sanitized_text.strip()
+            segment.pause_after_seconds = sanitized_scene.scene_pause_after_seconds
+        else:
+            segment_text = (segment.text or "").strip()
+
         if not segment_text:
             raise HTTPException(
                 status_code=422,
                 detail=f"Segment '{segment.segment_id}' does not contain narratable text.",
             )
 
-        clause_entries = (
-            _split_text_into_clauses(segment_text)
-            if getattr(segment, "enforce_comma_pause", True)
-            else [(segment_text, False)]
-        )
-        if not clause_entries:
-            clause_entries = [(segment_text, False)]
+        if sanitized_scene:
+            clause_specs = _clause_specs_from_sanitized(sanitized_scene)
+        else:
+            clause_specs = _clause_specs_from_fallback(
+                segment_text,
+                getattr(segment, "enforce_comma_pause", True),
+            )
+
+        if not clause_specs:
+            raise HTTPException(
+                status_code=422,
+                detail=f"No narratable clauses generated for segment '{segment.segment_id}'.",
+            )
+
+        segment.text = segment_text
 
         segment_suffix = uuid4().hex[:8]
         segment_component = _sanitize_component(segment.segment_id, "segment")
@@ -493,70 +731,156 @@ async def synthesize_longform_audio(request: LongFormAudioRequest) -> dict[str, 
         file_path = OUTPUT_DIR / file_name
 
         clause_workspace = Path(tempfile.mkdtemp(prefix="longform_clause_"))
-        clause_paths: list[Path] = []
+        clause_audio_paths: list[Path | None] = []
+        clause_trailing_silences: list[float] = []
+        clause_metrics: list[dict[str, Any]] = []
+        pause_overrides: dict[int, float] = {}
 
         try:
-            for clause_index, (clause_text, needs_pause) in enumerate(clause_entries):
-                cleaned_clause = clause_text.strip()
-                if not cleaned_clause:
-                    continue
+            for clause_index, spec in enumerate(clause_specs):
+                audio_path: Path | None = None
+                trailing_seconds = 0.0
 
-                request_payload = {
-                    "inputs": [
-                        {
-                            "text": cleaned_clause,
-                            "voice_id": plan.voice_id,
-                        }
-                    ]
-                }
+                if spec.text:
+                    request_payload = {
+                        "inputs": [
+                            {
+                                "text": spec.text,
+                                "voice_id": plan.voice_id,
+                            }
+                        ]
+                    }
 
-                api_response = requests.post(
-                    settings.ELEVENLABS_URL,
-                    json=request_payload,
-                    headers=api_headers,
-                )
-                if api_response.status_code != 200:
-                    raise HTTPException(
-                        status_code=api_response.status_code,
-                        detail=api_response.text,
+                    api_response = requests.post(
+                        settings.ELEVENLABS_URL,
+                        json=request_payload,
+                        headers=api_headers,
                     )
+                    if api_response.status_code != 200:
+                        raise HTTPException(
+                            status_code=api_response.status_code,
+                            detail=api_response.text,
+                        )
 
-                clause_file = (
-                    clause_workspace
-                    / f"{segment_component}_clause_{clause_index:03d}.{export_extension}"
-                )
-                with clause_file.open("wb") as audio_file:
-                    audio_file.write(api_response.content)
-
-                clause_paths.append(clause_file)
-
-                if needs_pause and getattr(segment, "enforce_comma_pause", True):
-                    silence_path = (
+                    audio_path = (
                         clause_workspace
-                        / f"pause_{clause_index:03d}_{uuid4().hex[:8]}.{export_extension}"
+                        / f"{segment_component}_clause_{clause_index:03d}.{export_extension}"
                     )
-                    _create_silence_segment(
-                        PUNCTUATION_PAUSE_SECONDS,
-                        silence_path,
-                        export_extension,
-                    )
-                    clause_paths.append(silence_path)
+                    with audio_path.open("wb") as audio_file:
+                        audio_file.write(api_response.content)
 
-            if not clause_paths:
+                    trailing_seconds = _measure_trailing_silence_seconds(audio_path)
+
+                clause_audio_paths.append(audio_path)
+                clause_trailing_silences.append(trailing_seconds)
+
+            (
+                sequence_paths,
+                silence_paths,
+                observed_pauses,
+                applied_desired_pauses,
+            ) = _assemble_clause_sequence(
+                clause_specs,
+                clause_audio_paths,
+                clause_trailing_silences,
+                pause_overrides,
+                clause_workspace,
+                export_extension,
+            )
+
+            if not sequence_paths:
                 raise HTTPException(
                     status_code=422,
                     detail=f"No audio produced for segment '{segment.segment_id}'.",
                 )
 
-            if len(clause_paths) == 1:
-                shutil.copyfile(clause_paths[0], file_path)
-            else:
-                _concat_audio_segments_ffmpeg(
-                    segment_paths=clause_paths,
-                    output_path=file_path,
-                    output_extension=export_extension,
-                    crossfade_seconds=0.0,
+            try:
+                if len(sequence_paths) == 1:
+                    shutil.copyfile(sequence_paths[0], file_path)
+                else:
+                    _concat_audio_segments_ffmpeg(
+                        segment_paths=sequence_paths,
+                        output_path=file_path,
+                        output_extension=export_extension,
+                        crossfade_seconds=0.0,
+                    )
+            finally:
+                _cleanup_paths(silence_paths)
+
+            segment_audio_bytes = file_path.read_bytes()
+
+            for idx, spec in enumerate(clause_specs):
+                clause_metrics.append(
+                    {
+                        "index": idx,
+                        "text": spec.text or "",
+                        "target": spec.pause_seconds,
+                        "observed": observed_pauses[idx],
+                        "desired": applied_desired_pauses[idx],
+                        "trailing": clause_trailing_silences[idx],
+                    }
                 )
+
+            needs_splice = sanitized_scene is not None and any(
+                abs(metric["observed"] - metric["target"]) > PAUSE_DEVIATION_THRESHOLD
+                for metric in clause_metrics
+            )
+
+            if needs_splice and sanitized_scene:
+                adjustments = await _run_splice_agent(
+                    segment.segment_id,
+                    sanitized_scene,
+                    clause_metrics,
+                    segment_audio_bytes,
+                )
+
+                if adjustments:
+                    pause_overrides.update({int(k): v for k, v in adjustments.items()})
+
+                    if file_path.exists():
+                        with suppress(OSError):
+                            file_path.unlink()
+
+                    (
+                        sequence_paths,
+                        silence_paths,
+                        observed_pauses,
+                        applied_desired_pauses,
+                    ) = _assemble_clause_sequence(
+                        clause_specs,
+                        clause_audio_paths,
+                        clause_trailing_silences,
+                        pause_overrides,
+                        clause_workspace,
+                        export_extension,
+                    )
+
+                    if not sequence_paths:
+                        raise HTTPException(
+                            status_code=422,
+                            detail=(
+                                "No audio produced for segment "
+                                f"'{segment.segment_id}' after splice adjustments."
+                            ),
+                        )
+
+                    try:
+                        if len(sequence_paths) == 1:
+                            shutil.copyfile(sequence_paths[0], file_path)
+                        else:
+                            _concat_audio_segments_ffmpeg(
+                                segment_paths=sequence_paths,
+                                output_path=file_path,
+                                output_extension=export_extension,
+                                crossfade_seconds=0.0,
+                            )
+                    finally:
+                        _cleanup_paths(silence_paths)
+
+                    segment_audio_bytes = file_path.read_bytes()
+                    for idx, metric in enumerate(clause_metrics):
+                        metric["observed"] = observed_pauses[idx]
+                        metric["desired"] = applied_desired_pauses[idx]
         finally:
             shutil.rmtree(clause_workspace, ignore_errors=True)
 

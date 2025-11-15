@@ -32,16 +32,23 @@ Luma provides a comprehensive video generation pipeline that automates the compl
 - **Scene Manifest System**: JSON manifest (`scene_audio_map.json`) tracks scene-to-file relationships
 - **Smart Asset Caching**: Avoid redundant uploads to HeyGen with persistent asset cache
 - **Multi-Format Support**: MP3, WAV, M4A, AAC audio formats
+- **Longform Scene Audio**: Agent-driven meditation narration with intelligent pause insertion, silence trimming, and multi-scene stitching
+- **Clause-Level Synthesis**: Break narration into natural speech segments with configurable pause durations
+- **Audio Sanitation**: Automatic removal of pause annotations (e.g., "(5 sec)") from spoken text while preserving timing metadata
 
 #### Intelligent AI Agents
 - **Script Analysis Agent**: Extracts scene structure, dialogue, and character information
 - **HeyGen Configuration Agent**: Maps audio assets to scenes with flexible pattern matching
+- **Longform Sanitizer Agent**: Strips pause annotations from meditation scripts and produces clause-level narration specs
+- **Longform Splice Agent**: Validates generated audio pause accuracy and provides adjustment instructions
+- **Scene Segmentation Agent**: Analyzes meditation narration to determine sentence boundaries and optimal pause durations
 - **Context-Aware Processing**: Handles scene identifiers with underscores, hyphens, or numeric patterns
 
 #### Frontend Operator Console
 - **Next.js 14 Application**: Modern React 19 application built with shadcn/ui components and Tailwind CSS
 - **Persistent Workflows**: Audio and video results are cached locally using localStorage for seamless workflow continuation
 - **Audio Library Management**: Interface for downloading, inspecting, and clearing cached assets with detailed metadata
+- **Longform Scene Tester**: Dedicated interface for generating meditation audio with multi-scene narration, pause visualization, and downloadable master tracks
 - **Performance Optimized**: Implements deferred rendering, memoization, and motion-safe transitions for responsive user experience
 
 #### Production-Ready Architecture
@@ -133,7 +140,7 @@ The Next.js operator console provides a comprehensive interface for managing the
 ### Interface Features
 
 #### Main Dashboard
-- **Tabbed Navigation**: Dedicated views for Audio Generation, Video Generation, Image-to-Video, and Audio Library
+- **Tabbed Navigation**: Dedicated views for Audio Generation, Video Generation, Image-to-Video, Longform Scene Stitching, and Audio Library
 - **Real-Time Health Monitoring**: Backend API availability indicator with automatic polling
 - **State Persistence**: Browser-based caching preserves generated outputs across sessions
 
@@ -154,6 +161,14 @@ The Next.js operator console provides a comprehensive interface for managing the
 - **Bulk Operations**: Refresh inventory or clear all cached files
 - **Metadata Display**: Badges indicating manifest presence and HeyGen cache status
 - **Download Capability**: Individual file downloads through static file serving
+
+#### Longform Scenes Tab
+- **Meditation Script Editor**: Multi-line textarea for pasting meditation scripts with scene headers and pause annotations
+- **Example Templates**: One-click loading of sample meditation scripts demonstrating proper formatting
+- **Scene Audio Preview**: Individual audio players for each processed scene with segmentation details
+- **Master Track Generation**: Automatic stitching of all scenes into a single downloadable MP3 file
+- **Pause Visualization**: Per-sentence display showing inferred pause durations and clause text
+- **Multipart Response Handling**: Client-side parsing of boundary-delimited metadata and audio binary data
 
 ### User Experience
 
@@ -320,7 +335,84 @@ Generate audio files without video rendering.
 
 ---
 
-### 4. Upload Audio Assets
+### 4. Longform Scene Audio Generation
+
+**Endpoint:** `POST /api/v1/longform_scenes`
+
+Generate multi-scene meditation audio with intelligent pause insertion, silence analysis, and automatic stitching. This endpoint processes scripts with explicit scene headers and optional pause annotations, returning both individual scene audio and a final master track.
+
+#### Request Schema
+
+```json
+{
+  "script": "string (required)"
+}
+```
+
+#### Script Format
+
+Meditation scripts should follow this structure:
+
+```
+शुरुआत
+धीरे-धीरे अपनी आँखें बंद करें और एक गहरी सांस लें... (5 sec)
+अब अपनी सांस छोड़ें और अपने कंधों को ढीला छोड़ दें।
+
+जगह और पोज़शन
+आप खुद को एक शांत जंगल में कल्पना करें। (10 sec)
+हर ओर हरी-भरी प्रकृति और हल्की हवा चल रही है।
+
+मुख्य यात्रा
+अपने हृदय पर ध्यान केंद्रित करें। (15 sec)
+```
+
+**Key Points:**
+- Scene headers are standalone lines without sentence-ending punctuation
+- Pause annotations like `(5 sec)` are automatically extracted and removed from narration
+- Default pause is 1.5 seconds after sentences ending with `.`, `?`, `!`, or `।`
+- Agent-driven segmentation validates and adjusts pause timings based on audio analysis
+
+#### Response Schema
+
+The endpoint returns a multipart response containing:
+1. **JSON Metadata**: Scene summaries with segmentation details and data URLs
+2. **Audio Binary**: Final stitched MP3 file
+
+```json
+{
+  "scenes": [
+    {
+      "scene_name": "शुरुआत",
+      "segments": [
+        {
+          "text": "धीरे-धीरे अपनी आँखें बंद करें और एक गहरी सांस लें",
+          "pause_after_seconds": 5.0
+        }
+      ],
+      "processed_audio_path": "data:audio/mpeg;base64,..."
+    }
+  ],
+  "final_audio_path": "data:audio/mpeg;base64,..."
+}
+```
+
+**Features:**
+- **Automatic Scene Parsing**: Identifies scene headers vs. narration content
+- **Silence Detection**: Measures trailing silence in synthesized audio for precise pause control
+- **Splice Validation**: Optional agent review of pause accuracy with adjustment recommendations
+- **Trim & Pad**: Adjusts silence to match target pause durations (±60ms tolerance)
+- **Master Stitching**: Combines all scene audio into a single normalized track
+
+**Processing Time:** 30-90 seconds per scene (includes synthesis, analysis, validation, and stitching)
+
+**Status Codes:**
+- `200 OK`: Multipart stream with metadata and audio
+- `422 Unprocessable Entity`: Invalid script format or missing scene content
+- `502 Bad Gateway`: ElevenLabs synthesis or agent failures
+
+---
+
+### 5. Upload Audio Assets
 
 **Endpoint:** `POST /api/v1/heygen/upload-audio-assets`
 
@@ -356,7 +448,7 @@ Manually upload audio files to HeyGen without generating video.
 
 ---
 
-### 5. Freepik Image-to-Video (Kling v2.1)
+### 6. Freepik Image-to-Video (Kling v2.1)
 
 **Endpoints:**
 - `POST /api/v1/freepik/image-to-video/kling-v2-1-std`
@@ -408,6 +500,7 @@ Luma/
 │   │   ├── audio-generation.tsx      # Audio workflow UI with persistence
 │   │   ├── video-generation.tsx      # HeyGen orchestration dashboard
 │   │   ├── audio-library.tsx         # Local asset management table
+│   │   ├── longform-scenes.tsx       # Meditation scene audio generator
 │   │   ├── image-to-video.tsx        # Freepik image-to-video interface
 │   │   ├── api-config.tsx            # Backend health monitoring widget
 │   │   └── ui/                       # shadcn/ui primitives (button, card, etc.)
@@ -428,30 +521,37 @@ Luma/
 │   │       ├── creatomate_route.py   # Creatomate render endpoints
 │   │       ├── elevenlabs_route.py   # ElevenLabs audio endpoints
 │   │       ├── freepik_route.py      # Freepik image-to-video endpoints
-│   │       └── heygen_route.py       # HeyGen video and avatar endpoints
+│   │       ├── heygen_route.py       # HeyGen video and avatar endpoints
+│   │       └── longform_route.py     # Longform scene audio endpoint
 │   ├── config/
 │   │   └── config.py                 # Settings management (Pydantic)
 │   ├── controllers/
-│   │   ├── creatomate.py            # Creatomate orchestration helpers
-│   │   ├── elevenlabs.py            # ElevenLabs workflow helpers
-│   │   ├── freepik.py               # Freepik image-to-video orchestration
-│   │   ├── generate_video.py        # Shared upload helpers for HeyGen assets
-│   │   └── heygen.py                # HeyGen avatar + batch video controller
+│   │   ├── creatomate.py             # Creatomate orchestration helpers
+│   │   ├── elevenlabs.py             # ElevenLabs workflow helpers
+│   │   ├── longform_scenes.py        # Longform meditation audio orchestration
+│   │   ├── freepik.py                # Freepik image-to-video orchestration
+│   │   ├── generate_video.py         # Shared upload helpers for HeyGen assets
+│   │   └── heygen.py                 # HeyGen avatar + batch video controller
 │   ├── models/
-│   │   ├── elevenlabs.py            # Audio request/response schemas
-│   │   └── heygen.py                # Video request/response schemas
+│   │   ├── elevenlabs_model.py       # Audio request/response schemas
+│   │   ├── longform.py               # Longform scene audio schemas
+│   │   └── heygen.py                 # Video request/response schemas
 │   ├── prompts/
-│   │   ├── elevenlabs_prompt.md     # Audio agent instructions
-│   │   └── heygen_prompt.md         # Video agent instructions
+│   │   ├── elevenlabs_prompt.md      # Audio agent instructions
+│   │   ├── elevenlabs_longform_prompt.md  # Longform audio plan agent
+│   │   ├── longform_sanitizer_prompt.md   # Script sanitation agent
+│   │   ├── longform_splice_prompt.md      # Pause validation agent
+│   │   ├── longform_segmentation_prompt.md # Scene segmentation agent
+│   │   └── heygen_prompt.md          # Video agent instructions
 │   ├── utils/
-│   │   └── agents.py                # Pydantic AI agent configurations
-│   └── main.py                      # FastAPI app entry point
+│   │   └── agents.py                 # Pydantic AI agent configurations
+│   └── main.py                       # FastAPI app entry point
 ├── generated_audio/                  # Audio/manifest storage
-│   ├── scene_audio_map.json        # Scene → filename manifest
-│   └── heygen_assets.json          # Asset upload cache
-├── .env                             # Environment variables (gitignored)
-├── .env.example                     # Template for credentials
-├── pyproject.toml                   # Project metadata & dependencies
+│   ├── scene_audio_map.json         # Scene → filename manifest
+│   └── heygen_assets.json            # Asset upload cache
+├── .env                              # Environment variables (gitignored)
+├── .env.example                      # Template for credentials
+├── pyproject.toml                    # Project metadata & dependencies
 └── README.md
 ```
 
@@ -805,6 +905,8 @@ Proprietary - Internal use only for Luma
 - **[Pydantic AI](https://ai.pydantic.dev/)** - Type-safe AI agent framework
 - **[ElevenLabs API Docs](https://elevenlabs.io/docs)** - Text-to-speech platform
 - **[HeyGen API](https://docs.heygen.com/)** - Video generation service
+- **[pydub Documentation](https://github.com/jiaaro/pydub)** - Audio manipulation library
+- **[FFmpeg](https://ffmpeg.org/documentation.html)** - Audio/video processing toolkit
 - **[uv Package Manager](https://github.com/astral-sh/uv)** - Fast Python tooling
 
 ---

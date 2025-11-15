@@ -14,6 +14,8 @@ HEYGEN_PROMPT_PATH = PROMPTS_DIR / "heygen_prompt.md"
 FREEPIK_PROMPT_PATH = PROMPTS_DIR / "freepik_prompt.md"
 HEYGEN_AVATAR_PROMPT_PATH = PROMPTS_DIR / "heygen_avatar_prompt.md"
 CREATOMATE_PROMPT_PATH = PROMPTS_DIR / "creatomate_prompt.md"
+LONGFORM_SANITIZER_PROMPT_PATH = PROMPTS_DIR / "longform_sanitizer_prompt.md"
+LONGFORM_SPLICE_PROMPT_PATH = PROMPTS_DIR / "longform_splice_prompt.md"
 
 
 def load_prompt(path: Path) -> str:
@@ -32,6 +34,18 @@ audio_agent = Agent(model=model, system_prompt=load_prompt(ELEVENLABS_PROMPT_PAT
 longform_audio_agent = Agent(
     model=model,
     system_prompt=load_prompt(ELEVENLABS_LONGFORM_PROMPT_PATH),
+)
+
+# Agent to sanitize raw meditation scripts before TTS
+longform_sanitizer_agent = Agent(
+    model=model,
+    system_prompt=load_prompt(LONGFORM_SANITIZER_PROMPT_PATH),
+)
+
+# Agent to evaluate generated audio pauses and propose splice adjustments
+longform_splice_agent = Agent(
+    model=model,
+    system_prompt=load_prompt(LONGFORM_SPLICE_PROMPT_PATH),
 )
 
 # Agent for Heygen

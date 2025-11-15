@@ -5,9 +5,10 @@ import AudioGeneration from "@/components/audio-generation"
 import VideoGeneration from "@/components/video-generation"
 import ImageToVideo from "@/components/image-to-video"
 import CreatomateRender from "@/components/creatomate-render"
+import LongformScenesTester from "@/components/longform-scenes"
 import { AudioLibrary } from "@/components/audio-library"
 import { ApiConfig } from "@/components/api-config"
-import { Music, Play, ImageIcon, Folder, Clapperboard } from "lucide-react"
+import { Music, Play, ImageIcon, Folder, Clapperboard, AudioLines } from "lucide-react"
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("audio")
@@ -82,6 +83,10 @@ export default function Home() {
                     <span>Kling AI Videos</span>
                   </li>
                   <li className="flex items-center gap-2">
+                    <AudioLines className="h-3 w-3 text-primary" />
+                    <span>Meditation Longform Scenes</span>
+                  </li>
+                  <li className="flex items-center gap-2">
                     <Clapperboard className="h-3 w-3 text-primary" />
                     <span>Creatomate Automation</span>
                   </li>
@@ -93,7 +98,7 @@ export default function Home() {
           {/* Main Content */}
           <div className="lg:col-span-3">
             <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-              <TabsList className="grid w-full grid-cols-5 mb-8 rounded-2xl bg-muted/40 p-1">
+              <TabsList className="grid w-full grid-cols-6 mb-8 rounded-2xl bg-muted/40 p-1">
                 <TabsTrigger value="audio" className="flex items-center gap-2 transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   <Music className="h-4 w-4" />
                   <span className="hidden sm:inline">Audio</span>
@@ -109,6 +114,10 @@ export default function Home() {
                 <TabsTrigger value="creatomate" className="flex items-center gap-2 transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   <Clapperboard className="h-4 w-4" />
                   <span className="hidden sm:inline">Creatomate</span>
+                </TabsTrigger>
+                <TabsTrigger value="longform-scenes" className="flex items-center gap-2 transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm">
+                  <AudioLines className="h-4 w-4" />
+                  <span className="hidden sm:inline">Longform</span>
                 </TabsTrigger>
                 <TabsTrigger value="library" className="flex items-center gap-2 transition-all data-[state=active]:bg-background data-[state=active]:shadow-sm">
                   <Folder className="h-4 w-4" />
@@ -134,6 +143,15 @@ export default function Home() {
               {/* Creatomate Tab */}
               <TabsContent value="creatomate" className="space-y-4 animate-fade-in-up" data-testid="tab-creatomate">
                 <CreatomateRender />
+              </TabsContent>
+
+              {/* Longform Scenes Tab */}
+              <TabsContent
+                value="longform-scenes"
+                className="space-y-4 animate-fade-in-up"
+                data-testid="tab-longform-scenes"
+              >
+                <LongformScenesTester />
               </TabsContent>
 
               {/* Audio Library Tab */}

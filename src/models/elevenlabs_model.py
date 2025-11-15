@@ -127,3 +127,48 @@ class LongFormAudioRequest(BaseModel):
             prefix = self.filename_prefix.strip()
             self.filename_prefix = prefix or None
         return self
+
+
+class SanitizedClause(BaseModel):
+    text: str = Field(..., description="Clause text after removing pause annotations.")
+    pause_after_seconds: float = Field(
+        ..., ge=0.0, description="Pause to insert after this clause in seconds."
+    )
+
+
+class SanitizedScene(BaseModel):
+    scene_id: str = Field(..., description="Identifier for the scene/segment being sanitized.")
+    sanitized_text: str = Field(
+        ...,
+        description="Entire scene narration with pause annotations removed, suitable for TTS.",
+    )
+    scene_pause_after_seconds: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Pause to apply after the scene completes, derived from trailing annotations.",
+    )
+    clauses: list[SanitizedClause] = Field(
+        default_factory=list,
+        description="Ordered clause-level narration and desired pauses.",
+    )
+
+
+class SanitizedSceneCollection(BaseModel):
+    scenes: list[SanitizedScene] = Field(
+        default_factory=list,
+        description="Sanitized narration for each input scene.",
+    )
+
+
+class PauseAdjustment(BaseModel):
+    clause_index: int = Field(..., ge=0, description="Index of the clause to adjust (0-based).")
+    desired_pause_seconds: float = Field(
+        ..., ge=0.0, description="Desired pause following the clause in seconds."
+    )
+
+
+class PauseAdjustmentResponse(BaseModel):
+    adjustments: list[PauseAdjustment] = Field(
+        default_factory=list,
+        description="Desired pause durations provided by the splice analysis agent.",
+    )
