@@ -82,7 +82,7 @@ async def _transcribe_with_whisper(audio_bytes: bytes) -> list[TranscriptSegment
         response = await client.audio.transcriptions.create(
             model=DEFAULT_WHISPER_MODEL,
             file=buffer,
-            response_format="verbose_json",
+            response_format="json",
             temperature=0,
         )
     except OpenAIError as error:
