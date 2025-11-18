@@ -7,17 +7,18 @@ import io
 import json
 import logging
 import math
+import random
 import re
+import time
 from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Any, cast
+from typing import Any
 
 import requests
 from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ValidationError
 from pydub import AudioSegment
-from pydub.silence import detect_silence
 
 from config.config import settings
 from models.elevenlabs_model import LongFormAudioPlan, PauseAdjustmentResponse
@@ -37,8 +38,8 @@ from utils.audio_analysis import analyze_scene_audio
 logger = logging.getLogger(__name__)
 
 DEFAULT_PAUSE_SECONDS = 1.5
+LONGFORM_VOICE_ID = "iPsiOpS0MlTcbGDk1jRS"
 SENTENCE_ENDINGS = {".", "?", "!", "।"}
-SPLIT_SILENCE_MAX_OFFSET_MS = 1200
 PAUSE_LABEL_PATTERN = r"(?:sec(?:onds?)?|secs?|s)"
 PAUSE_ANNOTATION_PATTERN = (
     r"\*?\(?\s*(?:(?P<pause>\d+(?:\.\d+)?)\s*"
@@ -116,6 +117,10 @@ def _normalized_scene_text(segments: list[SegmentPausePlan]) -> str:
 
 AUDIO_FORMAT = "mp3"
 ELEVENLABS_TIMEOUT_SECONDS = 240
+ELEVENLABS_MAX_ATTEMPTS = 4
+ELEVENLABS_INITIAL_BACKOFF_SECONDS = 1.5
+ELEVENLABS_MAX_BACKOFF_SECONDS = 10.0
+ELEVENLABS_RETRYABLE_STATUS = {408, 409, 425, 429, 500, 502, 503, 504}
 SPLICE_AGENT_MAX_AUDIO_BYTES = 800_000
 PAUSE_DEVIATION_THRESHOLD = 0.2
 PAUSE_UPDATE_EPSILON = 1e-3
@@ -176,6 +181,36 @@ def _strip_inline_pause_labels(text: str) -> str:
     return pattern.sub("", text)
 
 
+def _condense_text(text: str, limit: int = 300) -> str:
+    collapsed = " ".join(text.split())
+    if not collapsed:
+        return ""
+    return collapsed[:limit] + ("…" if len(collapsed) > limit else "")
+
+
+def _describe_elevenlabs_error(response: requests.Response) -> str:
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+
+    if isinstance(payload, dict):
+        for key in ("detail", "message", "error"):
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return _condense_text(value)
+
+    return _condense_text(response.text)
+
+
+def _sleep_with_backoff(attempt: int) -> None:
+    delay = min(
+        ELEVENLABS_INITIAL_BACKOFF_SECONDS * (2 ** (attempt - 1)),
+        ELEVENLABS_MAX_BACKOFF_SECONDS,
+    )
+    time.sleep(delay + random.uniform(0, 0.5))
+
+
 def _fallback_sentence_plan(scene_text: str) -> list[SegmentPausePlan]:
     segments: list[SegmentPausePlan] = []
     last_end = 0
@@ -232,7 +267,6 @@ def _fallback_sentence_plan(scene_text: str) -> list[SegmentPausePlan]:
 async def _derive_segment_plan(
     scene_name: str,
     scene_text: str,
-    audio_bytes: bytes,
     fallback_plan: list[SegmentPausePlan],
 ) -> list[SegmentPausePlan]:
     if not settings.OPENAI_API_KEY:
@@ -249,9 +283,6 @@ async def _derive_segment_plan(
         "scene_name": scene_name,
         "scene_text": scene_text,
         "fallback_segments": _serialize_segments_for_agent(fallback_plan),
-        "audio_metadata": {
-            "byte_length": len(audio_bytes),
-        },
     }
 
     try:
@@ -278,6 +309,7 @@ async def _build_elevenlabs_plan(scenes: list[SceneBlock]) -> LongFormAudioPlan:
 
     payload = {
         "mode": "scene_collection",
+        "voice_id_override": LONGFORM_VOICE_ID,
         "scenes": [
             {
                 "scene_id": scene.name,
@@ -316,183 +348,37 @@ async def _build_elevenlabs_plan(scenes: list[SceneBlock]) -> LongFormAudioPlan:
             detail="ElevenLabs audio plan did not align with parsed scenes.",
         )
 
+    plan.voice_id = LONGFORM_VOICE_ID
     return plan
 
 
-def _fallback_split_points(audio: AudioSegment, plan: list[SegmentPausePlan]) -> list[int]:
-    total_ms = len(audio)
-    char_weights = [max(len(segment.text.strip()), 1) for segment in plan]
-    total_weight = sum(char_weights) or 1
-    split_points: list[int] = []
-    cumulative_weight = 0
-
-    for weight in char_weights[:-1]:
-        cumulative_weight += weight
-        target = int(round(total_ms * (cumulative_weight / total_weight)))
-        target = min(max(target, 1), total_ms - 1)
-        if split_points and target <= split_points[-1]:
-            target = min(split_points[-1] + 1, total_ms - 1)
-        split_points.append(target)
-
-    return split_points
-
-
-def _map_silence_to_targets(
-    target_points: list[int],
-    silence_midpoints: list[int],
-    total_ms: int,
-) -> list[int]:
-    if not target_points:
-        return []
-
-    available = sorted(point for point in silence_midpoints if 0 < point < total_ms)
-    chosen_points: list[int] = []
-
-    for target in target_points:
-        best_index: int | None = None
-        best_point: int | None = None
-        best_delta: int | None = None
-
-        for index, point in enumerate(available):
-            delta = abs(point - target)
-            if best_delta is None or delta < best_delta:
-                best_delta = delta
-                best_point = point
-                best_index = index
-            if delta <= 80:  # perfect match, stop searching
-                break
-
-        if (
-            best_point is not None
-            and best_delta is not None
-            and best_delta <= SPLIT_SILENCE_MAX_OFFSET_MS
-        ):
-            chosen = best_point
-            del available[best_index]  # type: ignore[arg-type]
-        else:
-            chosen = target
-
-        if chosen_points and chosen <= chosen_points[-1]:
-            chosen = min(max(chosen, chosen_points[-1] + 1), total_ms - 1)
-
-        chosen_points.append(chosen)
-
-    return chosen_points
-
-
-def _measure_trailing_silence(
-    segment: AudioSegment,
-    silence_thresh: float,
-    chunk_size: int = 10,
-) -> int:
-    """Return the trailing silence duration (ms) for a segment."""
-
-    if len(segment) == 0:
-        return 0
-
-    trimmed = segment
-    trailing_ms = 0
-    reverse_cursor = len(trimmed)
-
-    while reverse_cursor > 0:
-        start = max(reverse_cursor - chunk_size, 0)
-        chunk = cast(AudioSegment, trimmed[start:reverse_cursor])
-        if chunk.dBFS > silence_thresh:
-            break
-        trailing_ms += reverse_cursor - start
-        reverse_cursor = start
-
-    return trailing_ms
-
-
-def _trim_trailing_silence_to(
-    segment: AudioSegment,
-    target_ms: int,
-    silence_thresh: float,
-) -> tuple[AudioSegment, int]:
-    """Trim trailing silence so it does not exceed target_ms.
-
-    Returns the updated segment plus the amount of trailing silence kept (in ms).
-    """
-
-    existing_ms = _measure_trailing_silence(segment, silence_thresh)
-    if existing_ms <= target_ms:
-        return segment, existing_ms
-
-    trim_amount = existing_ms - target_ms
-    keep_ms = max(len(segment) - trim_amount, 0)
-    trimmed_segment = cast(AudioSegment, segment[:keep_ms])
-    return trimmed_segment, target_ms
-
-
-def _slice_and_pause(audio_bytes: bytes, plan: list[SegmentPausePlan]) -> bytes:
-    audio = AudioSegment.from_file(io.BytesIO(audio_bytes), format=AUDIO_FORMAT)
+async def _synthesize_scene_audio(
+    plan: list[SegmentPausePlan],
+    voice_id: str,
+) -> bytes:
     if not plan:
-        return audio_bytes
+        raise HTTPException(status_code=422, detail="Segmentation plan cannot be empty.")
 
-    if len(plan) == 1:
-        pause_ms = int(round(plan[0].pause_after_seconds * 1000))
-        processed = audio + AudioSegment.silent(duration=pause_ms)
-        buffer = io.BytesIO()
-        processed.export(buffer, format=AUDIO_FORMAT)
-        buffer.seek(0)
-        return buffer.getvalue()
+    combined = AudioSegment.silent(duration=0)
 
-    silence_ranges = detect_silence(
-        audio,
-        min_silence_len=350,
-        silence_thresh=audio.dBFS - 16,
-        seek_step=10,
-    )
-    silence_midpoints: list[int] = []
-    for start, end in silence_ranges:
-        midpoint = int((start + end) / 2)
-        if 0 < midpoint < len(audio):
-            silence_midpoints.append(midpoint)
-    target_points = _fallback_split_points(audio, plan)
-
-    if silence_midpoints:
-        split_points = _map_silence_to_targets(target_points, silence_midpoints, len(audio))
-    else:
-        split_points = target_points
-
-    stitched = AudioSegment.silent(duration=0)
-    cursor = 0
-    for index, split_point in enumerate(split_points):
-        segment_audio = audio[cursor:split_point]
-        pause_ms = int(round(plan[index].pause_after_seconds * 1000))
-
-        silence_thresh = audio.dBFS - 16
-        tolerance_ms = 60
-        existing_silence_ms = _measure_trailing_silence(segment_audio, silence_thresh)
-
-        # Trim excess silence if ElevenLabs inserted more than requested beyond tolerance.
-        if existing_silence_ms - pause_ms > tolerance_ms and pause_ms >= 0:
-            segment_audio, existing_silence_ms = _trim_trailing_silence_to(
-                segment_audio,
-                pause_ms,
-                silence_thresh,
+    for index, segment in enumerate(plan):
+        clause_text = segment.text.strip()
+        if clause_text:
+            clause_audio_bytes = await _generate_scene_audio(clause_text, voice_id)
+            clause_audio = AudioSegment.from_file(
+                io.BytesIO(clause_audio_bytes),
+                format=AUDIO_FORMAT,
             )
+            combined += clause_audio
+        else:
+            logger.debug("Skipping empty clause at index %d", index)
 
-        stitched += segment_audio
-
-        if pause_ms > 0 and pause_ms - existing_silence_ms > tolerance_ms:
-            stitched += AudioSegment.silent(duration=pause_ms - existing_silence_ms)
-
-        cursor = split_point
-
-    stitched += audio[cursor:]
-    final_pause_ms = int(round(plan[-1].pause_after_seconds * 1000))
-    if final_pause_ms > 0:
-        silence_thresh = audio.dBFS - 16
-        existing_final_ms = _measure_trailing_silence(stitched, silence_thresh)
-        if existing_final_ms - final_pause_ms > 60:
-            stitched, _ = _trim_trailing_silence_to(stitched, final_pause_ms, silence_thresh)
-        elif final_pause_ms - existing_final_ms > 60:
-            stitched += AudioSegment.silent(duration=final_pause_ms - existing_final_ms)
+        pause_ms = max(int(round(segment.pause_after_seconds * 1000)), 0)
+        if pause_ms > 0:
+            combined += AudioSegment.silent(duration=pause_ms)
 
     buffer = io.BytesIO()
-    stitched.export(buffer, format=AUDIO_FORMAT)
+    combined.export(buffer, format=AUDIO_FORMAT)
     buffer.seek(0)
     return buffer.getvalue()
 
@@ -652,24 +538,71 @@ async def _generate_scene_audio(scene_text: str, voice_id: str) -> bytes:
         "Content-Type": "application/json",
     }
 
-    def _request() -> bytes:
-        response = requests.post(
-            settings.ELEVENLABS_URL,
-            json=payload,
-            headers=headers,
-            timeout=ELEVENLABS_TIMEOUT_SECONDS,
-        )
-        if response.status_code != 200:
-            logger.warning(
-                "ElevenLabs synthesis failed (status=%s): %s",
-                response.status_code,
-                response.text,
-            )
-            raise HTTPException(status_code=response.status_code, detail=response.text)
-        return response.content
+    def _request_with_retry() -> bytes:
+        last_error: Exception | None = None
+
+        for attempt in range(1, ELEVENLABS_MAX_ATTEMPTS + 1):
+            try:
+                response = requests.post(
+                    settings.ELEVENLABS_URL,
+                    json=payload,
+                    headers=headers,
+                    timeout=ELEVENLABS_TIMEOUT_SECONDS,
+                )
+            except requests.RequestException as error:  # pragma: no cover - external service
+                last_error = error
+                logger.warning(
+                    "ElevenLabs synthesis attempt %d/%d failed to reach API: %s",
+                    attempt,
+                    ELEVENLABS_MAX_ATTEMPTS,
+                    error,
+                )
+            except Exception as error:  # pragma: no cover - external service
+                last_error = error
+                logger.warning(
+                    "Unexpected ElevenLabs client error on attempt %d/%d: %s",
+                    attempt,
+                    ELEVENLABS_MAX_ATTEMPTS,
+                    error,
+                )
+            else:
+                if response.status_code == 200:
+                    return response.content
+
+                detail_preview = _describe_elevenlabs_error(response)
+                if (
+                    response.status_code in ELEVENLABS_RETRYABLE_STATUS
+                    and attempt < ELEVENLABS_MAX_ATTEMPTS
+                ):
+                    logger.warning(
+                        "ElevenLabs synthesis attempt %d/%d returned status %s; retrying: %s",
+                        attempt,
+                        ELEVENLABS_MAX_ATTEMPTS,
+                        response.status_code,
+                        detail_preview or "no response body",
+                    )
+                else:
+                    logger.warning(
+                        "ElevenLabs synthesis failed (status=%s): %s",
+                        response.status_code,
+                        detail_preview or "no response body",
+                    )
+                    raise HTTPException(
+                        status_code=response.status_code,
+                        detail=detail_preview or "ElevenLabs request failed.",
+                    )
+
+            if attempt < ELEVENLABS_MAX_ATTEMPTS:
+                _sleep_with_backoff(attempt)
+
+        logger.error("ElevenLabs audio synthesis exhausted retries.")
+        detail = "ElevenLabs audio synthesis failed."
+        if last_error is not None:
+            raise HTTPException(status_code=502, detail=detail) from last_error
+        raise HTTPException(status_code=502, detail=detail)
 
     try:
-        return await run_in_threadpool(_request)
+        return await run_in_threadpool(_request_with_retry)
     except HTTPException:
         raise
     except Exception as error:  # pragma: no cover - external service
@@ -744,7 +677,6 @@ async def process_longform_script(script: str) -> tuple[LongformScenesResponse, 
             continue
 
         fallback_plan = _fallback_sentence_plan(raw_text)
-        cleaned_text = _remove_pause_markers(raw_text)
 
         plan_segment = audio_plan.segments[index]
         if (
@@ -756,15 +688,9 @@ async def process_longform_script(script: str) -> tuple[LongformScenesResponse, 
                 plan_segment.segment_id,
                 scene.name,
             )
-        plan_text = plan_segment.text.strip() or cleaned_text
-        audio_input_text = _remove_pause_markers(plan_text)
-
-        audio_bytes = await _generate_scene_audio(audio_input_text, voice_id)
-
         final_plan = await _derive_segment_plan(
             scene_name=scene.name,
             scene_text=raw_text,
-            audio_bytes=audio_bytes,
             fallback_plan=fallback_plan,
         )
 
@@ -776,7 +702,7 @@ async def process_longform_script(script: str) -> tuple[LongformScenesResponse, 
             _plan_debug_snapshot(final_plan),
         )
 
-        processed_audio = _slice_and_pause(audio_bytes, final_plan)
+        processed_audio = await _synthesize_scene_audio(final_plan, voice_id)
 
         try:
             timing_analysis = await analyze_scene_audio(processed_audio, final_plan)
@@ -795,7 +721,7 @@ async def process_longform_script(script: str) -> tuple[LongformScenesResponse, 
             updated_plan, changed = _apply_pause_adjustments(final_plan, adjustments)
             if changed:
                 final_plan = updated_plan
-                processed_audio = _slice_and_pause(audio_bytes, final_plan)
+                processed_audio = await _synthesize_scene_audio(final_plan, voice_id)
                 try:
                     timing_analysis = await analyze_scene_audio(processed_audio, final_plan)
                 except Exception as error:  # pragma: no cover - diagnostic path
