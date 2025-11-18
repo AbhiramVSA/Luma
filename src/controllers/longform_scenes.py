@@ -10,16 +10,12 @@ import math
 import re
 from collections.abc import Iterable
 from dataclasses import dataclass
-from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import requests
 from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ValidationError
-from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIChatModel
-from pydantic_ai.providers.openai import OpenAIProvider
 from pydub import AudioSegment
 from pydub.silence import detect_silence
 
@@ -31,13 +27,18 @@ from models.longform import (
     SceneTimingAnalysis,
     SegmentPausePlan,
 )
-from utils.agents import longform_audio_agent, longform_splice_agent
+from utils.agents import (
+    longform_audio_agent,
+    longform_clause_agent,
+    longform_splice_agent,
+)
 from utils.audio_analysis import analyze_scene_audio
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_PAUSE_SECONDS = 1.5
 SENTENCE_ENDINGS = {".", "?", "!", "।"}
+SPLIT_SILENCE_MAX_OFFSET_MS = 1200
 PAUSE_LABEL_PATTERN = r"(?:sec(?:onds?)?|secs?|s)"
 PAUSE_ANNOTATION_PATTERN = (
     r"\*?\(?\s*(?:(?P<pause>\d+(?:\.\d+)?)\s*"
@@ -53,7 +54,7 @@ SENTENCE_PATTERN = re.compile(
     re.IGNORECASE | re.DOTALL,
 )
 
-PROMPT_PATH = Path(__file__).resolve().parent.parent / "prompts" / "longform_segmentation_prompt.md"
+MARKUP_NORMALIZATION_PATTERN = re.compile(r"[\s\*_`~\u200b\u200c\u200d]+", re.UNICODE)
 MULTIPART_BOUNDARY = "longform-scenes-boundary"
 
 
@@ -71,25 +72,50 @@ class SceneSegmentationPlan(BaseModel):
     segments: list[SegmentPausePlan]
 
 
-def _load_segmentation_prompt() -> str:
+def _serialize_segments_for_agent(segments: list[SegmentPausePlan]) -> list[dict[str, Any]]:
+    return [segment.model_dump() for segment in segments]
+
+
+def _parse_clause_agent_segments(raw_output: object) -> list[SegmentPausePlan]:
+    if isinstance(raw_output, str):
+        try:
+            payload = json.loads(raw_output)
+        except json.JSONDecodeError as error:
+            logger.warning("Clause agent output was not valid JSON: %s", error)
+            return []
+    else:
+        payload = raw_output
+
     try:
-        return PROMPT_PATH.read_text(encoding="utf-8")
-    except OSError as error:
-        logger.error("Failed to load segmentation prompt: %s", error)
-        raise HTTPException(status_code=500, detail="Segmentation prompt not available.") from error
+        plan = SceneSegmentationPlan.model_validate(payload)
+    except ValidationError as error:
+        logger.warning("Clause agent payload failed validation: %s", error)
+        return []
+
+    return list(plan.segments)
 
 
-SEGMENTATION_AGENT = Agent(
-    model=OpenAIChatModel(
-        model_name="gpt-5",
-        provider=OpenAIProvider(api_key=settings.OPENAI_API_KEY),
-    ),
-    system_prompt=_load_segmentation_prompt(),
-    output_type=SceneSegmentationPlan,  # type: ignore[arg-type]
-)
+def _plan_debug_snapshot(plan: list[SegmentPausePlan], limit: int = 80) -> list[dict[str, object]]:
+    snapshot: list[dict[str, object]] = []
+    for index, segment in enumerate(plan):
+        text = segment.text.strip().replace("\n", " ")
+        snapshot.append(
+            {
+                "index": index,
+                "text": text[:limit] + ("…" if len(text) > limit else ""),
+                "pause": segment.pause_after_seconds,
+            }
+        )
+    return snapshot
+
+
+def _normalized_scene_text(segments: list[SegmentPausePlan]) -> str:
+    combined = "".join(segment.text.strip() for segment in segments if segment.text)
+    return MARKUP_NORMALIZATION_PATTERN.sub("", combined)
+
 
 AUDIO_FORMAT = "mp3"
-ELEVENLABS_TIMEOUT_SECONDS = 120
+ELEVENLABS_TIMEOUT_SECONDS = 240
 SPLICE_AGENT_MAX_AUDIO_BYTES = 800_000
 PAUSE_DEVIATION_THRESHOLD = 0.2
 PAUSE_UPDATE_EPSILON = 1e-3
@@ -150,7 +176,7 @@ def _strip_inline_pause_labels(text: str) -> str:
     return pattern.sub("", text)
 
 
-def _extract_sentence_plan(scene_text: str) -> list[SegmentPausePlan]:
+def _fallback_sentence_plan(scene_text: str) -> list[SegmentPausePlan]:
     segments: list[SegmentPausePlan] = []
     last_end = 0
 
@@ -201,6 +227,49 @@ def _extract_sentence_plan(scene_text: str) -> list[SegmentPausePlan]:
         raise HTTPException(status_code=422, detail="No sentences detected within scene text.")
 
     return segments
+
+
+async def _derive_segment_plan(
+    scene_name: str,
+    scene_text: str,
+    audio_bytes: bytes,
+    fallback_plan: list[SegmentPausePlan],
+) -> list[SegmentPausePlan]:
+    if not settings.OPENAI_API_KEY:
+        logger.debug("OPENAI_API_KEY missing; returning fallback segmentation for '%s'", scene_name)
+        return fallback_plan
+
+    logger.debug(
+        "Fallback clause plan for '%s': %s",
+        scene_name,
+        _plan_debug_snapshot(fallback_plan),
+    )
+
+    clause_payload = {
+        "scene_name": scene_name,
+        "scene_text": scene_text,
+        "fallback_segments": _serialize_segments_for_agent(fallback_plan),
+        "audio_metadata": {
+            "byte_length": len(audio_bytes),
+        },
+    }
+
+    try:
+        agent_result = await longform_clause_agent.run(
+            json.dumps(clause_payload, ensure_ascii=False)
+        )
+    except Exception as error:  # pragma: no cover - external service
+        logger.warning("Clause segmentation agent failed for '%s': %s", scene_name, error)
+        return fallback_plan
+
+    agent_segments = _parse_clause_agent_segments(agent_result.output)
+    if not agent_segments:
+        logger.warning("Clause segmentation agent returned no usable plan for '%s'", scene_name)
+        return fallback_plan
+
+    logger.info("Clause agent plan for '%s': %s", scene_name, _plan_debug_snapshot(agent_segments))
+
+    return _validate_agent_plan(fallback_plan, agent_segments, scene_name)
 
 
 async def _build_elevenlabs_plan(scenes: list[SceneBlock]) -> LongFormAudioPlan:
@@ -268,6 +337,49 @@ def _fallback_split_points(audio: AudioSegment, plan: list[SegmentPausePlan]) ->
     return split_points
 
 
+def _map_silence_to_targets(
+    target_points: list[int],
+    silence_midpoints: list[int],
+    total_ms: int,
+) -> list[int]:
+    if not target_points:
+        return []
+
+    available = sorted(point for point in silence_midpoints if 0 < point < total_ms)
+    chosen_points: list[int] = []
+
+    for target in target_points:
+        best_index: int | None = None
+        best_point: int | None = None
+        best_delta: int | None = None
+
+        for index, point in enumerate(available):
+            delta = abs(point - target)
+            if best_delta is None or delta < best_delta:
+                best_delta = delta
+                best_point = point
+                best_index = index
+            if delta <= 80:  # perfect match, stop searching
+                break
+
+        if (
+            best_point is not None
+            and best_delta is not None
+            and best_delta <= SPLIT_SILENCE_MAX_OFFSET_MS
+        ):
+            chosen = best_point
+            del available[best_index]  # type: ignore[arg-type]
+        else:
+            chosen = target
+
+        if chosen_points and chosen <= chosen_points[-1]:
+            chosen = min(max(chosen, chosen_points[-1] + 1), total_ms - 1)
+
+        chosen_points.append(chosen)
+
+    return chosen_points
+
+
 def _measure_trailing_silence(
     segment: AudioSegment,
     silence_thresh: float,
@@ -332,26 +444,17 @@ def _slice_and_pause(audio_bytes: bytes, plan: list[SegmentPausePlan]) -> bytes:
         silence_thresh=audio.dBFS - 16,
         seek_step=10,
     )
-    split_points: list[int] = []
+    silence_midpoints: list[int] = []
     for start, end in silence_ranges:
         midpoint = int((start + end) / 2)
         if 0 < midpoint < len(audio):
-            split_points.append(midpoint)
-        if len(split_points) == len(plan) - 1:
-            break
+            silence_midpoints.append(midpoint)
+    target_points = _fallback_split_points(audio, plan)
 
-    if len(split_points) < len(plan) - 1:
-        split_points = _fallback_split_points(audio, plan)
-
-    deduped_points: list[int] = []
-    for point in sorted(split_points):
-        if point <= 0 or point >= len(audio):
-            continue
-        if deduped_points and abs(point - deduped_points[-1]) < 30:
-            continue
-        deduped_points.append(point)
-
-    split_points = deduped_points[: len(plan) - 1]
+    if silence_midpoints:
+        split_points = _map_silence_to_targets(target_points, silence_midpoints, len(audio))
+    else:
+        split_points = target_points
 
     stitched = AudioSegment.silent(duration=0)
     cursor = 0
@@ -574,54 +677,44 @@ async def _generate_scene_audio(scene_text: str, voice_id: str) -> bytes:
         raise HTTPException(status_code=502, detail="ElevenLabs audio synthesis failed.") from error
 
 
-async def _run_segmentation_agent(
-    scene_name: str,
-    scene_text: str,
-    audio_bytes: bytes,
-) -> list[SegmentPausePlan]:
-    prompt = (
-        "Analyse this meditation scene and list each sentence with the pause you believe "
-        "should follow based solely on the text.\n\nScene: "
-        f"{scene_name}\n\n{scene_text}"
-    )
-
-    try:
-        run_result = await SEGMENTATION_AGENT.run(prompt)
-    except Exception as error:  # pragma: no cover - external service
-        logger.warning("Segmentation agent failed for %s: %s", scene_name, error)
-        raise HTTPException(status_code=502, detail="Segmentation agent failed.") from error
-
-    agent_plan = run_result.output
-    try:
-        return list(agent_plan.segments)
-    except ValidationError as error:
-        logger.warning("Segmentation agent returned invalid payload for %s: %s", scene_name, error)
-        raise HTTPException(status_code=502, detail="Segmentation agent output invalid.") from error
-
-
 def _validate_agent_plan(
     expected: list[SegmentPausePlan],
     candidate: list[SegmentPausePlan],
     scene_name: str,
 ) -> list[SegmentPausePlan]:
-    if len(expected) != len(candidate):
+    if not candidate:
+        logger.warning("Clause agent produced an empty plan for scene '%s'", scene_name)
+        return expected
+
+    expected_text = _normalized_scene_text(expected)
+    candidate_text = _normalized_scene_text(candidate)
+    if expected_text != candidate_text:
         logger.warning(
-            "Segmentation mismatch in scene '%s': expected %d segments, got %d",
+            "Clause agent altered text content for scene '%s'; reverting to fallback", scene_name
+        )
+        logger.debug(
+            "Expected snapshot: %s -- Candidate snapshot: %s",
+            _plan_debug_snapshot(expected),
+            _plan_debug_snapshot(candidate),
+        )
+        return expected
+
+    for index, cand in enumerate(candidate):
+        if cand.pause_after_seconds < 0:
+            logger.warning(
+                "Negative pause detected in scene '%s' at index %d; reverting to fallback",
+                scene_name,
+                index,
+            )
+            return expected
+
+    if len(expected) != len(candidate):
+        logger.debug(
+            "Clause agent adjusted segment count for scene '%s' (expected=%d candidate=%d)",
             scene_name,
             len(expected),
             len(candidate),
         )
-        return expected
-
-    for index, (exp, cand) in enumerate(zip(expected, candidate, strict=False)):
-        if exp.text.strip() != cand.text.strip():
-            logger.warning(
-                "Segmentation text mismatch in scene '%s' at index %d", scene_name, index
-            )
-            return expected
-        if cand.pause_after_seconds < 0:
-            logger.warning("Negative pause detected in scene '%s' at index %d", scene_name, index)
-            return expected
 
     return candidate
 
@@ -650,7 +743,7 @@ async def process_longform_script(script: str) -> tuple[LongformScenesResponse, 
             logger.warning("Skipping empty scene '%s'", scene.name)
             continue
 
-        expected_plan = _extract_sentence_plan(raw_text)
+        fallback_plan = _fallback_sentence_plan(raw_text)
         cleaned_text = _remove_pause_markers(raw_text)
 
         plan_segment = audio_plan.segments[index]
@@ -668,12 +761,20 @@ async def process_longform_script(script: str) -> tuple[LongformScenesResponse, 
 
         audio_bytes = await _generate_scene_audio(audio_input_text, voice_id)
 
-        try:
-            agent_segments = await _run_segmentation_agent(scene.name, raw_text, audio_bytes)
-        except HTTPException:
-            agent_segments = expected_plan
+        final_plan = await _derive_segment_plan(
+            scene_name=scene.name,
+            scene_text=raw_text,
+            audio_bytes=audio_bytes,
+            fallback_plan=fallback_plan,
+        )
 
-        final_plan = _validate_agent_plan(expected_plan, agent_segments, scene.name)
+        plan_source = "agent" if final_plan is not fallback_plan else "fallback"
+        logger.info(
+            "Scene '%s' using %s segmentation plan: %s",
+            scene.name,
+            plan_source,
+            _plan_debug_snapshot(final_plan),
+        )
 
         processed_audio = _slice_and_pause(audio_bytes, final_plan)
 

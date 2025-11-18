@@ -16,6 +16,7 @@ HEYGEN_AVATAR_PROMPT_PATH = PROMPTS_DIR / "heygen_avatar_prompt.md"
 CREATOMATE_PROMPT_PATH = PROMPTS_DIR / "creatomate_prompt.md"
 LONGFORM_SANITIZER_PROMPT_PATH = PROMPTS_DIR / "longform_sanitizer_prompt.md"
 LONGFORM_SPLICE_PROMPT_PATH = PROMPTS_DIR / "longform_splice_prompt.md"
+LONGFORM_CLAUSE_PROMPT_PATH = PROMPTS_DIR / "longform_clause_prompt.md"
 
 
 def load_prompt(path: Path) -> str:
@@ -46,6 +47,12 @@ longform_sanitizer_agent = Agent(
 longform_splice_agent = Agent(
     model=model,
     system_prompt=load_prompt(LONGFORM_SPLICE_PROMPT_PATH),
+)
+
+# Agent to normalize clause-level segmentation when regex fallback is unreliable
+longform_clause_agent = Agent(
+    model=model,
+    system_prompt=load_prompt(LONGFORM_CLAUSE_PROMPT_PATH),
 )
 
 # Agent for Heygen
