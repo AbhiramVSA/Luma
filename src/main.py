@@ -59,6 +59,17 @@ app.mount(
 app.include_router(api_router, prefix="/api/v1")
 
 
+@app.get("/", tags=["meta"])
+async def root_message() -> dict[str, str]:
+    """Return a friendly message for the bare domain instead of a 404."""
+
+    return {
+        "message": "InnerBhakti API deployed",
+        "docs": "/docs",
+        "health": "/api/v1/health",
+    }
+
+
 @app.on_event("startup")
 async def on_startup() -> None:
     await init_models()
