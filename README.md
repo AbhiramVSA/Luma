@@ -133,6 +133,31 @@ The UI runs at `http://127.0.0.1:3000` and connects to the backend API at `http:
 
 ---
 
+## Deploying to Vercel
+
+### Project Layout
+
+- `content-gen/` &rarr; Next.js frontend (deploy as one Vercel project)
+- `src/` &rarr; FastAPI backend (deploy as a second Vercel project)
+
+### Backend Project Setup
+
+1. **Root Directory:** `src`
+2. **Entry Point:** `src/api/index.py` re-exports the FastAPI instance for Vercel.
+3. **Runtime Config:** `src/vercel.json` pins Python 3.11 and resource limits.
+4. **Dependencies:** `src/requirements.txt` is generated via `uv pip compile pyproject.toml -o src/requirements.txt` and used automatically by Vercel.
+5. **Env Vars:** add the same values from `.env` (e.g., `OPENAI_API_KEY`, `DATABASE_URL`, `JWT_SECRET_KEY`, `FRONTEND_URL`, `CORS_ADDITIONAL_ORIGINS`). Set them for Production, Preview, and Development.
+
+### Frontend Project Setup
+
+1. **Root Directory:** `content-gen`
+2. **Build Command:** `pnpm install && pnpm build`
+3. **Env Vars:** at minimum `NEXT_PUBLIC_API_BASE_URL=https://<backend-project>.vercel.app/api/v1` so the frontend points at the deployed backend.
+
+After both projects deploy, update `NEXT_PUBLIC_API_BASE_URL` whenever the backend domain changes.
+
+---
+
 ## Frontend Operator Console
 
 The Next.js operator console provides a comprehensive interface for managing the video generation pipeline with real-time monitoring and workflow persistence.
