@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Textarea } from "@/components/ui/textarea"
+import { apiFetch } from "@/lib/api"
 import { AlertCircle, AudioLines, Download, Loader2, MicVocal, Wand2 } from "lucide-react"
 
 interface SceneSegment {
@@ -99,7 +100,7 @@ export default function LongformScenesTester() {
     setResult(null)
 
     try {
-      const response = await fetch("http://127.0.0.1:8002/api/v1/longform_scenes", {
+      const response = await apiFetch("/longform_scenes", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

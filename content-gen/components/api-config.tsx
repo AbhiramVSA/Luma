@@ -4,6 +4,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { AlertCircle, CheckCircle2 } from "lucide-react"
 import { useState, useEffect } from "react"
+import { API_BASE_URL, apiFetch } from "@/lib/api"
 
 export function ApiConfig() {
   const [apiStatus, setApiStatus] = useState<"checking" | "connected" | "disconnected">("checking")
@@ -11,7 +12,7 @@ export function ApiConfig() {
   useEffect(() => {
     const checkApiStatus = async () => {
       try {
-        const response = await fetch("http://127.0.0.1:8002/api/v1/health", {
+        const response = await apiFetch("/health", {
           method: "GET",
         })
         setApiStatus(response.ok ? "connected" : "disconnected")
@@ -35,7 +36,7 @@ export function ApiConfig() {
       <CardContent className="space-y-3">
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground">Base URL</p>
-          <p className="font-mono text-xs break-all">http://127.0.0.1:8002/api/v1</p>
+          <p className="font-mono text-xs break-all">{API_BASE_URL}</p>
         </div>
 
         <div className="flex items-center gap-2">
@@ -59,7 +60,7 @@ export function ApiConfig() {
           <Alert variant="destructive" className="mt-3">
             <AlertCircle className="h-4 w-4" />
             <AlertDescription className="text-xs">
-              Backend API is not responding. Make sure the server is running at http://127.0.0.1:8002
+              Backend API is not responding. Verify the server is reachable at {API_BASE_URL}
             </AlertDescription>
           </Alert>
         )}

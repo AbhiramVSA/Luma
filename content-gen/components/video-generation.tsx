@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Progress } from "@/components/ui/progress"
 import { Loader2, AlertCircle, CheckCircle2, Play, RefreshCw, Download, Trash2 } from "lucide-react"
+import { apiFetch } from "@/lib/api"
 
 const VIDEO_STORAGE_KEY = "ib-video-generation-state"
 
@@ -97,7 +98,7 @@ export default function VideoGeneration() {
     setSuccess(false)
 
     try {
-      const response = await fetch("http://127.0.0.1:8002/api/v1/heygen/generate-video", {
+      const response = await apiFetch("/heygen/generate-video", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -135,7 +136,7 @@ export default function VideoGeneration() {
     if (videoResults.length === 0) return
 
     try {
-      const response = await fetch("http://127.0.0.1:8002/api/v1/heygen/generate-video", {
+      const response = await apiFetch("/heygen/generate-video", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

@@ -8,13 +8,17 @@ import CreatomateRender from "@/components/creatomate-render"
 import LongformScenesTester from "@/components/longform-scenes"
 import { AudioLibrary } from "@/components/audio-library"
 import { ApiConfig } from "@/components/api-config"
+import { AuthGate } from "@/components/auth-gate"
+import { AuthStatus } from "@/components/auth-status"
+import { API_BASE_URL } from "@/lib/api"
 import { Music, Play, ImageIcon, Folder, Clapperboard, AudioLines } from "lucide-react"
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState("audio")
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-background via-background to-background/95">
+    <AuthGate>
+      <div className="min-h-screen bg-gradient-to-br from-background via-background to-background/95">
       {/* Header */}
       <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container mx-auto px-4 py-4 sm:px-6 lg:px-8 animate-fade-in-up">
@@ -28,8 +32,11 @@ export default function Home() {
                 <p className="text-xs text-muted-foreground">Video Generation Studio</p>
               </div>
             </div>
-            <div className="hidden sm:block text-sm text-muted-foreground">
-              <p className="font-mono text-xs">API: http://127.0.0.1:8002/api/v1</p>
+            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+              <p className="hidden sm:block font-mono text-xs" title="API base URL">
+                API: {API_BASE_URL}
+              </p>
+              <AuthStatus />
             </div>
           </div>
         </div>
@@ -172,6 +179,7 @@ export default function Home() {
           </div>
         </div>
       </footer>
-    </div>
+      </div>
+    </AuthGate>
   )
 }

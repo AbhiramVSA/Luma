@@ -22,6 +22,7 @@ import {
   Trash2,
   Video,
 } from "lucide-react"
+import { apiAssetUrl, apiFetch } from "@/lib/api"
 
 interface SceneInput {
   scene_id: string
@@ -66,7 +67,6 @@ interface CreatomateRenderResponse {
   errors: string[]
 }
 
-const API_BASE_URL = "http://127.0.0.1:8002"
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"]
 const MAX_IMAGE_SIZE_BYTES = 10 * 1024 * 1024
 
@@ -178,7 +178,7 @@ export default function CreatomateRender() {
       formData.append("file", file)
 
       try {
-        const response = await fetch(`${API_BASE_URL}/api/v1/creatomate/upload-image`, {
+        const response = await apiFetch("/creatomate/upload-image", {
           method: "POST",
           body: formData,
         })
@@ -190,9 +190,7 @@ export default function CreatomateRender() {
 
         const data: { url?: string } = await response.json()
         const relativeUrl = typeof data.url === "string" ? data.url : ""
-        const absoluteUrl = relativeUrl.startsWith("http")
-          ? relativeUrl
-          : `${API_BASE_URL}${relativeUrl}`
+        const absoluteUrl = apiAssetUrl(relativeUrl)
 
         setScenes((prev) => {
           const next = [...prev]
@@ -278,7 +276,7 @@ export default function CreatomateRender() {
     setResponse(null)
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/v1/creatomate/render`, {
+      const response = await apiFetch("/creatomate/render", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -391,12 +389,7 @@ export default function CreatomateRender() {
                       {(scene.preview_url || scene.image_url) && (
                         <div className="flex items-center gap-3 rounded-md border border-dashed border-border/60 p-2">
                           <Image
-                            src={
-                              scene.preview_url
-                                || (scene.image_url.startsWith("http")
-                                  ? scene.image_url
-                                  : `${API_BASE_URL}${scene.image_url}`)
-                            }
+                            src={scene.preview_url || apiAssetUrl(scene.image_url)}
                             alt={`${scene.scene_id || `scene-${index + 1}`} reference`}
                             width={64}
                             height={64}
@@ -404,7 +397,7 @@ export default function CreatomateRender() {
                           />
                           {scene.image_url && (
                             <a
-                              href={scene.image_url.startsWith("http") ? scene.image_url : `${API_BASE_URL}${scene.image_url}`}
+                              href={apiAssetUrl(scene.image_url)}
                               target="_blank"
                               rel="noreferrer"
                               className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
@@ -554,9 +547,7 @@ export default function CreatomateRender() {
               <CardContent className="grid gap-4 md:grid-cols-2">
                 {response.audio_outputs.map((audio, index) => {
                   const downloadUrl =
-                    typeof audio.audio_file === "string" && audio.audio_file.startsWith("/")
-                      ? `${API_BASE_URL}${audio.audio_file}`
-                      : (audio.audio_file as string | undefined)
+                    typeof audio.audio_file === "string" ? apiAssetUrl(audio.audio_file) : undefined
 
                   return (
                     <Card key={`${audio.scene_id ?? "audio"}-${index}`} className="hover-lift">

@@ -22,7 +22,7 @@ from models.longform import (
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_WHISPER_MODEL = "gpt-4o-mini-transcribe"
+DEFAULT_WHISPER_MODEL = "whisper-1"
 VAD_SAMPLE_RATE = 16_000
 VAD_FRAME_MS = 30
 MIN_SILENCE_MS = 400
@@ -82,7 +82,8 @@ async def _transcribe_with_whisper(audio_bytes: bytes) -> list[TranscriptSegment
         response = await client.audio.transcriptions.create(
             model=DEFAULT_WHISPER_MODEL,
             file=buffer,
-            response_format="json",
+            response_format="verbose_json",
+            timestamp_granularities=["word"],
             temperature=0,
         )
     except OpenAIError as error:
@@ -93,6 +94,29 @@ async def _transcribe_with_whisper(audio_bytes: bytes) -> list[TranscriptSegment
         return []
 
     segments: list[TranscriptSegment] = []
+
+    # Extract words if available (verbose_json with timestamp_granularities=['word'])
+    words = getattr(response, "words", None)
+    if words is None and isinstance(response, dict):
+        words = response.get("words")
+
+    if words:
+        for word_data in words:
+            text = _coerce_to_str(_segment_field(word_data, "word", default="")).strip()
+            if not text:
+                continue
+            start = _coerce_to_float(_segment_field(word_data, "start", default=0.0), 0.0)
+            end = _coerce_to_float(_segment_field(word_data, "end", default=start), start)
+            segments.append(
+                TranscriptSegment(
+                    text=text,
+                    start_ms=max(int(round(start * 1000)), 0),
+                    end_ms=max(int(round(end * 1000)), 0),
+                )
+            )
+        return segments
+
+    # Fallback to segments if words are not available
     for raw_segment in _extract_segments_payload(response):
         text_value = _segment_field(raw_segment, "text", default="")
         text = _coerce_to_str(text_value).strip()

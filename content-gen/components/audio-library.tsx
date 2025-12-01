@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Loader2, RefreshCw, Trash2, Download, Database } from "lucide-react"
+import { apiAssetUrl, apiFetch } from "@/lib/api"
 
 interface AudioFileEntry {
   file_name: string
@@ -23,8 +24,6 @@ interface AudioFileResponse {
   asset_cache_present: boolean
 }
 
-const API_BASE = "http://127.0.0.1:8002/api/v1/elevenlabs"
-
 export function AudioLibrary() {
   const [files, setFiles] = useState<AudioFileEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -37,7 +36,7 @@ export function AudioLibrary() {
     setError(null)
 
     try {
-      const response = await fetch(`${API_BASE}/audio-files`)
+      const response = await apiFetch("/elevenlabs/audio-files")
       if (!response.ok) {
         throw new Error(`Request failed with status ${response.status}`)
       }
@@ -60,7 +59,7 @@ export function AudioLibrary() {
     setError(null)
 
     try {
-      const response = await fetch(`${API_BASE}/audio-files`, { method: "DELETE" })
+      const response = await apiFetch("/elevenlabs/audio-files", { method: "DELETE" })
       if (!response.ok) {
         const detail = await response.json().catch(() => null)
         throw new Error(detail?.detail || `Failed with status ${response.status}`)
@@ -178,7 +177,7 @@ export function AudioLibrary() {
                     </div>
                     <div className="flex items-center gap-2">
                       <a
-                        href={`http://127.0.0.1:8002${file.download_url}`}
+                        href={apiAssetUrl(file.download_url)}
                         download
                         className="inline-flex items-center gap-2 rounded-md border border-border px-3 py-2 text-xs font-medium text-primary transition-colors hover:bg-primary/10 hover-lift"
                       >

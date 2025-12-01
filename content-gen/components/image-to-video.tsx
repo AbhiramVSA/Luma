@@ -10,6 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Slider } from "@/components/ui/slider"
 import { Loader2, AlertCircle, CheckCircle2, Upload, Download, RefreshCw, ImageIcon } from "lucide-react"
+import { apiFetch } from "@/lib/api"
 
 interface FreepikPromptBundle {
   prompt: string
@@ -52,8 +53,8 @@ export default function ImageToVideo() {
     setError("")
 
     try {
-      const response = await fetch(
-        `http://127.0.0.1:8002/api/v1/freepik/image-to-video/kling-v2-1/${taskId}?wait_for_completion=false`,
+      const response = await apiFetch(
+        `/freepik/image-to-video/kling-v2-1/${taskId}?wait_for_completion=false`,
         {
           method: "GET",
         },
@@ -138,7 +139,7 @@ export default function ImageToVideo() {
     setAgentPrompts(null)
 
     try {
-      const response = await fetch("http://127.0.0.1:8002/api/v1/freepik/image-to-video/kling-v2-1-std", {
+      const response = await apiFetch("/freepik/image-to-video/kling-v2-1-std", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
