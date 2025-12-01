@@ -3,7 +3,7 @@ name = "innerbhakti-video-generation-automation"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.13"
+requires-python = ">=3.11"
 dependencies = [
     "elevenlabs>=2.18.0",
     "fastapi[standard]>=0.119.0",
@@ -12,7 +12,6 @@ dependencies = [
     "pydantic-settings>=2.6.0,<2.11.0",
     "pydub>=0.25.1",
     "openai>=1.51.0",
-    "audioop-lts>=0.2.0",
     "webrtcvad>=2.0.10",
     "setuptools>=70.0.0",
     "sqlalchemy[asyncio]>=2.0.36",

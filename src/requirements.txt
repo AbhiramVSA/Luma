@@ -36,8 +36,6 @@ attrs==25.4.0
     #   cyclopts
     #   jsonschema
     #   referencing
-audioop-lts==0.2.2
-    # via innerbhakti-video-generation-automation (pyproject.toml)
 authlib==1.6.5
     # via fastmcp
 bcrypt==5.0.0
