@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 from contextlib import suppress
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -502,7 +502,7 @@ async def synthesize_audio_assets(script: str) -> tuple[ScriptRequest, dict[str,
 
     scene_outputs: list[dict[str, str]] = []
     manifest_records: list[dict[str, str]] = []
-    generated_timestamp = datetime.utcnow().isoformat() + "Z"
+    generated_timestamp = datetime.now(UTC).isoformat()
 
     for scene in script_config.scenes:
         scene_inputs = [
@@ -671,7 +671,7 @@ async def synthesize_longform_audio(request: LongFormAudioRequest) -> dict[str, 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
     prefix = _sanitize_component(request.filename_prefix or "longform", "longform")
-    generated_timestamp = datetime.utcnow().isoformat() + "Z"
+    generated_timestamp = datetime.now(UTC).isoformat()
     crossfade_ms = max(0, plan.stitching_instructions.crossfade_ms)
 
     any_scene_pause = any(segment.pause_after_seconds > 0 for segment in plan.segments)
@@ -1009,7 +1009,7 @@ def describe_audio_directory() -> dict[str, Any]:
                 "relative_path": f"{OUTPUT_DIR.name}/{path.name}",
                 "size_bytes": stats.st_size,
                 "size_readable": format_file_size(stats.st_size),
-                "modified_at": datetime.utcfromtimestamp(stats.st_mtime).isoformat() + "Z",
+                "modified_at": datetime.fromtimestamp(stats.st_mtime, tz=UTC).isoformat(),
                 "download_url": f"/generated_audio/{path.name}",
             }
         )
