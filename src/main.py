@@ -2,6 +2,8 @@
 
 import logging
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -22,10 +24,18 @@ if not logging.getLogger().handlers:
 
 logger = logging.getLogger("innerbhakti.api")
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    await init_models()
+    yield
+
+
 app = FastAPI(
-    title="InnerBhakti Video Generation Automation",
+    title="Luma Video Generation API",
     description="API for generating audio and video content using AI services",
     version="0.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -68,11 +78,6 @@ async def root_message() -> dict[str, str]:
         "docs": "/docs",
         "health": "/api/v1/health",
     }
-
-
-@app.on_event("startup")
-async def on_startup() -> None:
-    await init_models()
 
 
 @app.middleware("http")
