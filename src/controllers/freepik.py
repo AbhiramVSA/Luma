@@ -161,7 +161,7 @@ async def _poll_task_status_until_complete(
             )
 
         await asyncio.sleep(max(poll_interval, 0.5))
-    latest = _fetch_task_status(task_id)
+        latest = _fetch_task_status(task_id)
 
 
 def _stream_generated_video(task_id: UUID, asset_url: str) -> StreamingResponse:

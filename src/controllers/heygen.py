@@ -282,8 +282,6 @@ def _submit_video_job(payload: dict[str, Any]) -> dict[str, Any]:
 
     raise HTTPException(status_code=500, detail=data.get("message") or data.get("error") or data)
 
-    return data
-
 
 def _submit_avatar_iv_job(payload: dict[str, Any]) -> dict[str, Any]:
     headers = {
@@ -374,7 +372,13 @@ def _fetch_video_status(
     max_attempts: int | None = None,
     interval_seconds: int | None = None,
 ) -> dict[str, Any]:
-    """Poll HeyGen for the latest video status and return the JSON payload."""
+    """Poll HeyGen for the latest video status and return the JSON payload.
+
+    Note: Uses synchronous sleep between poll attempts. This is acceptable
+    because the function is called from sync context within the video batch
+    generation pipeline.
+    """
+    import time
 
     if not settings.HEYGEN_API_KEY:
         raise HTTPException(status_code=400, detail="HEYGEN_API_KEY is not configured.")
@@ -415,8 +419,6 @@ def _fetch_video_status(
             return payload
 
         if attempt < max_attempts - 1:
-            import time
-
             time.sleep(interval_seconds)
 
     logger.warning(

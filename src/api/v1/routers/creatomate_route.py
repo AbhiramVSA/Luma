@@ -37,7 +37,7 @@ async def render_video(
         )
         raise
     except Exception as exc:  # pragma: no cover - defensive
-        logger.exception("Creatomate orchestration failed: %%s", exc)
+        logger.exception("Creatomate orchestration failed: %s", exc)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     logger.info(
