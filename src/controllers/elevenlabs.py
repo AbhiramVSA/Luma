@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from pydub import AudioSegment
 
 from config.config import settings
-from models.elevenlabs_model import (
+from models.elevenlabs import (
     LongFormAudioPlan,
     LongFormAudioRequest,
     PauseAdjustmentResponse,

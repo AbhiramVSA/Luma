@@ -16,7 +16,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 
 from config.config import settings
-from models.freepik_model import (
+from models.freepik import (
     FreepikAgentPromptOutput,
     FreepikImageToVideoGenerationRequest,
     FreepikImageToVideoResponse,

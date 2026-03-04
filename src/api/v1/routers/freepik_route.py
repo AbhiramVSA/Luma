@@ -18,7 +18,7 @@ from controllers.freepik import (
     _stream_generated_video,
     generate_prompt_bundle,
 )
-from models.freepik_model import (
+from models.freepik import (
     FreepikImageToVideoGenerationRequest,
     FreepikImageToVideoRequest,
     FreepikImageToVideoResponse,

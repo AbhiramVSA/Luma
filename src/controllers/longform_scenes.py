@@ -24,7 +24,7 @@ from pydub import AudioSegment
 from pydub.silence import detect_silence
 
 from config.config import settings
-from models.elevenlabs_model import LongFormAudioPlan, PauseAdjustmentResponse
+from models.elevenlabs import LongFormAudioPlan, PauseAdjustmentResponse
 from models.longform import (
     LongformScenesResponse,
     SceneProcessingSummary,

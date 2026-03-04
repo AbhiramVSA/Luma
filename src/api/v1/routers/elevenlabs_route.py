@@ -10,7 +10,7 @@ from controllers.elevenlabs import (
     synthesize_audio_assets,
     synthesize_longform_audio,
 )
-from models.elevenlabs_model import LongFormAudioRequest
+from models.elevenlabs import LongFormAudioRequest
 
 logger = logging.getLogger(__name__)
 
