@@ -1,7 +1,5 @@
 """Tests for pure helper functions in controllers.elevenlabs."""
 
-import pytest
-
 # These functions are pure and don't require external services.
 from controllers.elevenlabs import (
     _default_pause_for_punctuation,

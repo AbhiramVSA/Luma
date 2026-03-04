@@ -5,13 +5,13 @@ from pydantic import ValidationError
 
 from models.auth import LoginRequest, TokenResponse
 from models.elevenlabs import LongFormAudioRequest, LongFormSceneInput
+from models.freepik import FreepikPromptBundle
 from models.heygen import (
     HeyGenAvatarAgentOutput,
     HeyGenAvatarVideoRequest,
     HeyGenSceneConfig,
     HeyGenVideoRequest,
 )
-from models.freepik import FreepikPromptBundle
 
 
 class TestLoginRequest:
