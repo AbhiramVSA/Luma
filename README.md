@@ -62,16 +62,16 @@ graph TB
 ```mermaid
 graph LR
     subgraph "Frontend · Next.js 14"
-        UI[Operator Console<br/>React 19 + shadcn/ui]
+        UI["Operator Console<br/>React 19 + shadcn/ui"]
     end
 
     subgraph "Backend · FastAPI"
         direction TB
         R[Routers] --> C[Controllers]
-        C --> AG[Agent Layer<br/>pydantic-ai + GPT-5]
-        C --> SVC[Auth Service<br/>JWT + bcrypt]
-        C --> AU[Audio Analysis<br/>Whisper + VAD]
-        SVC --> DB[(PostgreSQL<br/>Neon)]
+        C --> AG["Agent Layer<br/>pydantic-ai + GPT-5"]
+        C --> SVC["Auth Service<br/>JWT + bcrypt"]
+        C --> AU["Audio Analysis<br/>Whisper + VAD"]
+        SVC --> DB[("PostgreSQL<br/>Neon")]
     end
 
     subgraph "External APIs"
@@ -138,21 +138,21 @@ graph TD
     end
 
     subgraph "Audio Agents"
-        A1[audio_agent<br/>Scene audio tagging]
-        A2[longform_audio_agent<br/>Narration plan generation]
-        A3[longform_sanitizer_agent<br/>Script sanitation for TTS]
-        A4[longform_splice_agent<br/>Pause quality analysis]
-        A5[longform_clause_agent<br/>Clause segmentation]
+        A1["audio_agent<br/>Scene audio tagging"]
+        A2["longform_audio_agent<br/>Narration plan generation"]
+        A3["longform_sanitizer_agent<br/>Script sanitation for TTS"]
+        A4["longform_splice_agent<br/>Pause quality analysis"]
+        A5["longform_clause_agent<br/>Clause segmentation"]
     end
 
     subgraph "Video Agents"
-        V1[heygen_agent<br/>Scene config extraction]
-        V2[heygen_avatar_agent<br/>Avatar IV payload]
-        V3[freepik_agent<br/>Kling prompt engineering]
+        V1["heygen_agent<br/>Scene config extraction"]
+        V2["heygen_avatar_agent<br/>Avatar IV payload"]
+        V3["freepik_agent<br/>Kling prompt engineering"]
     end
 
     subgraph "Render Agent"
-        R1[creatomate_agent<br/>Render modification mapping]
+        R1["creatomate_agent<br/>Render modification mapping"]
     end
 
     P --> A1 & A2 & A3 & A4 & A5
@@ -221,33 +221,33 @@ sequenceDiagram
 
 ```mermaid
 flowchart TD
-    A[Client submits meditation script] --> B[Parse scene headers<br/>regex: Scene N ...]
+    A["Client submits meditation script"] --> B["Parse scene headers<br/>regex: Scene N ..."]
 
     B --> C{For each scene}
-    C --> D[longform_clause_agent<br/>or regex fallback]
+    C --> D["longform_clause_agent<br/>or regex fallback"]
     D --> E["List of (clause_text, pause_seconds)"]
 
     E --> F{For each clause}
-    F --> G[ElevenLabs /text-to-dialogue]
-    G --> H[Measure trailing silence<br/>pydub dBFS threshold]
-    H --> I[Compute silence gap<br/>target - observed]
+    F --> G["ElevenLabs text-to-dialogue"]
+    G --> H["Measure trailing silence<br/>pydub dBFS threshold"]
+    H --> I["Compute silence gap<br/>target - observed"]
     I --> J[Generate silence segment<br/>ffmpeg]
     J --> F
 
-    F --> K[Concatenate clause sequence<br/>ffmpeg concat]
-    K --> L[Whisper transcription<br/>word-level timestamps]
-    K --> M[WebRTC VAD<br/>silence window detection]
+    F --> K["Concatenate clause sequence<br/>ffmpeg concat"]
+    K --> L["Whisper transcription<br/>word-level timestamps"]
+    K --> M["WebRTC VAD<br/>silence window detection"]
 
-    L --> N{Pause deviation<br/>> 0.2s?}
+    L --> N{"Pause deviation<br/>exceeds 0.2s?"}
     M --> N
-    N -- Yes --> O[longform_splice_agent<br/>+ audio base64]
-    O --> P[Re-assemble with<br/>corrected pauses]
+    N -- Yes --> O["longform_splice_agent<br/>+ audio base64"]
+    O --> P["Re-assemble with<br/>corrected pauses"]
     P --> Q[Scene audio file]
     N -- No --> Q
 
     Q --> C
-    C --> R[Concatenate all scenes<br/>ffmpeg concat/crossfade]
-    R --> S[Multipart Response<br/>JSON metadata + audio bytes]
+    C --> R["Concatenate all scenes<br/>ffmpeg concat + crossfade"]
+    R --> S["Multipart Response<br/>JSON metadata + audio bytes"]
 
     style O fill:#f9f,stroke:#333
     style N fill:#ff9,stroke:#333
@@ -313,21 +313,21 @@ sequenceDiagram
 graph TB
     subgraph "Next.js 14 App Router"
         AG[AuthGate] --> DASH[Dashboard]
-        LOGIN[/login] --> AG
-        SIGNUP[/signup]
+        LOGIN["Login Page"] --> AG
+        SIGNUP["Signup Page"]
 
-        DASH --> T1[Audio Tab<br/>AudioGeneration]
-        DASH --> T2[Video Tab<br/>VideoGeneration]
-        DASH --> T3[Image Tab<br/>ImageToVideo]
-        DASH --> T4[Creatomate Tab<br/>CreatomateRender]
-        DASH --> T5[Longform Tab<br/>LongformScenesTester]
-        DASH --> T6[Library Tab<br/>AudioLibrary]
+        DASH --> T1["Audio Tab<br/>AudioGeneration"]
+        DASH --> T2["Video Tab<br/>VideoGeneration"]
+        DASH --> T3["Image Tab<br/>ImageToVideo"]
+        DASH --> T4["Creatomate Tab<br/>CreatomateRender"]
+        DASH --> T5["Longform Tab<br/>LongformScenesTester"]
+        DASH --> T6["Library Tab<br/>AudioLibrary"]
     end
 
     subgraph "Shared Infra"
-        POLL[usePolling /<br/>useExponentialBackoffPolling]
-        APIC[apiFetch<br/>Bearer token injection]
-        ERR[Error Handler<br/>retry + timeout]
+        POLL["usePolling<br/>useExponentialBackoffPolling"]
+        APIC["apiFetch<br/>Bearer token injection"]
+        ERR["Error Handler<br/>retry + timeout"]
     end
 
     T1 & T2 & T3 & T4 & T5 & T6 --> POLL
