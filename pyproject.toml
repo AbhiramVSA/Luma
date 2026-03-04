@@ -1,7 +1,7 @@
 [project]
 name = "innerbhakti-video-generation-automation"
 version = "0.1.0"
-description = "Add your description here"
+description = "AI-powered video content production automation platform"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

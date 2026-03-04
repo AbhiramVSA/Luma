@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     ELEVENLABS_URL: str = Field(default="https://api.elevenlabs.io/v1/text-to-dialogue")
     HEYGEN_API_KEY: str = Field(default="")
     HEYGEN_DEFAULT_TALKING_PHOTO_ID: str = Field(default="Monica_inSleeveless_20220819")
+    HEYGEN_UPLOAD_FOLDER_ID: str = Field(default="")
     FREEPIK_API_KEY: str = Field(default="")
     CREATOMATE_API_KEY: str = Field(default="")
     CREATOMATE_DEFAULT_TEMPLATE_ID: str = Field(default="")

@@ -86,8 +86,9 @@ def _upload_single_audio(file_path: Path, scene_id: str | None) -> dict[str, Any
     headers = {
         "Content-Type": "audio/mpeg",
         "X-Api-Key": settings.HEYGEN_API_KEY,
-        "folder_id": "8f1fd5e9a5c0456882803e2f48a256eb",
     }
+    if settings.HEYGEN_UPLOAD_FOLDER_ID:
+        headers["folder_id"] = settings.HEYGEN_UPLOAD_FOLDER_ID
 
     with file_path.open("rb") as audio_file:
         response = requests.post(
