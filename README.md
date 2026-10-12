@@ -7,7 +7,7 @@
 <h4 align="center">An API and operator console for script-based audio and video production.</h4>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-%3E%3D3.11-3776AB" alt="Python 3.11 or newer" />
+  <img src="https://img.shields.io/badge/Python-declared%20%3E%3D3.11-3776AB" alt="Declared Python metadata: 3.11 or newer" />
   <img src="https://img.shields.io/badge/FastAPI-API-009688?logo=fastapi&logoColor=white" alt="FastAPI" />
   <img src="https://img.shields.io/badge/Next.js-14.2.25-000000?logo=next.js" alt="Next.js 14.2.25" />
   <img src="https://img.shields.io/badge/Proprietary-Internal%20use%20only-555555" alt="Proprietary: internal use only" />
@@ -35,7 +35,7 @@
 
 Luma contains a FastAPI service and a Next.js operator console. The code supports audio generation, avatar-video workflows, image-to-video tasks, longform audio scenes, and render assembly. These workflows call the external services that you configure for the project.
 
-The console uses the InnerBhakti name in its sign-in and workspace screens. Accounts are provisioned by an administrator. The sign-up page does not create accounts.
+The console uses the InnerBhakti name in its sign-in and workspace screens. An administrator provisions accounts. The sign-up page does not create accounts.
 
 ## Key Features
 
@@ -47,14 +47,15 @@ The console uses the InnerBhakti name in its sign-in and workspace screens. Acco
 - Define Pydantic AI agents that use the OpenAI `gpt-5` model for workflow inputs.
 - Store generated audio and assets in local directories that the API serves as static files.
 
-The API protects workflow routes with bearer-token authentication. The login route uses a database account; the source has no self-service account creation flow.
+The API protects workflow routes with bearer-token authentication. The login route uses a database account. The source has no self-service account creation flow.
 
 ## Getting Started
 
 ### Requirements
 
-- Python 3.11 or newer. The root `.python-version` selects Python 3.13.
+- Project metadata declares Python 3.11 or newer. The root `.python-version` selects Python 3.13.
 - `uv` for the Python project.
+- `ffmpeg` on `PATH` for audio conversion and scene assembly.
 - Node.js and `pnpm` for the console. The repository does not pin their versions.
 - A PostgreSQL database and a provisioned user for sign-in.
 - Provider credentials for each external workflow you plan to use.
@@ -96,7 +97,7 @@ cd content-gen
 pnpm dev
 ```
 
-The console uses `http://127.0.0.1:8002/api/v1` by default. Set `NEXT_PUBLIC_API_BASE_URL` before `pnpm dev` if your API uses another address. Sign in with an account that an administrator has provisioned.
+The console uses `http://127.0.0.1:8002/api/v1` by default. Set `NEXT_PUBLIC_API_BASE_URL` before `pnpm dev` if your API uses another address. Sign in with an account that an administrator provisioned.
 
 ## How To Use
 
@@ -108,6 +109,16 @@ The console uses `http://127.0.0.1:8002/api/v1` by default. Set `NEXT_PUBLIC_API
 
 Workflow requests can send scripts, images, or audio to the configured providers. Do not use sensitive input unless you are authorized to send it to those services.
 
+The audio page uses `Scene N` headings and dialogue lines. The long-form page accepts pause markers such as `(5 sec)` after sentences. This example shows input only.
+
+```text
+Scene 1: Opening
+Character A: Good morning.
+Character B: We will start with a short introduction. (1.5 sec)
+```
+
+See the [audio script example](content-gen/components/audio-generation.tsx), [long-form pause guidance](content-gen/components/longform-scenes.tsx), [long-form request model](src/models/longform.py), and [script parser](src/controllers/longform_scenes.py).
+
 ## Tests
 
 Run the Python tests and lint check from the repository root:
@@ -116,6 +127,8 @@ Run the Python tests and lint check from the repository root:
 uv run pytest
 uv run ruff check src
 ```
+
+The root `.python-version` selects Python 3.13. Python 3.13 removes `audioop`. The current audio path fails when `pydub` imports this module. See [issue #2](https://github.com/AbhiramVSA/Luma/issues/2). This README branch does not include the source fix.
 
 The console defines `lint` and `build` scripts, but no test script:
 
@@ -127,7 +140,7 @@ pnpm build
 
 ## Deployment
 
-The tree includes a Vercel ASGI entry file at [`src/api/index.py`](src/api/index.py), plus [`src/requirements.txt`](src/requirements.txt) and [`src/runtime.txt`](src/runtime.txt). The runtime file says Python 3.11; the root development file selects Python 3.13. The tree has no tracked Vercel project configuration, Dockerfile, or deployment workflow, so it does not define the full deployment setup or its trigger.
+The tree includes a Vercel ASGI entry file at [`src/api/index.py`](src/api/index.py), plus [`src/requirements.txt`](src/requirements.txt) and [`src/runtime.txt`](src/runtime.txt). The runtime file says Python 3.11. The root development file selects Python 3.13. The tree has no tracked Vercel project configuration, Dockerfile, or deployment workflow, so it does not define the full deployment setup or its trigger.
 
 ## Credits and License
 
