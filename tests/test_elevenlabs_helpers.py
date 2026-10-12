@@ -15,7 +15,7 @@ class TestSanitizeComponent:
         assert _sanitize_component("scene_1", "fallback") == "scene_1"
 
     def test_strips_special_characters(self):
-        assert _sanitize_component("hello world!", "fb") == "hello_world_"
+        assert _sanitize_component("hello world!", "fb") == "hello_world"
 
     def test_empty_string_returns_fallback(self):
         assert _sanitize_component("", "default") == "default"
