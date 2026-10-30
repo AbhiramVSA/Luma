@@ -1,6 +1,18 @@
+<p align="center">
+  <img src="assets/luma-mark.png" alt="Luma mark showing media scenes converging through an aperture" width="128" />
+</p>
+
 # Luma
 
 AI-powered video content production platform. Transforms scripts into production-ready video content with talking avatars, expressive audio, and intelligent scene management.
+
+<p align="center">
+  <a href="#capabilities">Capabilities</a> ·
+  <a href="#core-pipelines">Pipelines</a> ·
+  <a href="#api-reference">API</a> ·
+  <a href="#getting-started">Setup</a> ·
+  <a href="#license">License</a>
+</p>
 
 ## Overview
 
