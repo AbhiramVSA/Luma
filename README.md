@@ -1,10 +1,10 @@
 <p align="center">
-  <img src="assets/luma-mark.png" alt="Luma mark showing media scenes converging through an aperture" width="128" />
+  <img src="assets/luma-mark.png" alt="Luma mark showing media scenes converging through an aperture" width="200" />
 </p>
 
-# Luma
+<h1 align="center">Luma</h1>
 
-AI-powered video content production platform. Transforms scripts into production-ready video content with talking avatars, expressive audio, and intelligent scene management.
+<p align="center">AI-powered video content production platform. Transforms scripts into production-ready video content with talking avatars, expressive audio, and intelligent scene management.</p>
 
 <p align="center">
   <a href="#capabilities">Capabilities</a> ·
