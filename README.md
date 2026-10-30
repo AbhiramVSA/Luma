@@ -1,6 +1,18 @@
-# Luma
+<p align="center">
+  <img src="assets/luma-mark.png" alt="Luma mark showing media scenes converging through an aperture" width="200" />
+</p>
 
-AI-powered video content production platform. Transforms scripts into production-ready video content with talking avatars, expressive audio, and intelligent scene management.
+<h1 align="center">Luma</h1>
+
+<p align="center">AI-powered video content production platform. Transforms scripts into production-ready video content with talking avatars, expressive audio, and intelligent scene management.</p>
+
+<p align="center">
+  <a href="#capabilities">Capabilities</a> ·
+  <a href="#core-pipelines">Pipelines</a> ·
+  <a href="#api-reference">API</a> ·
+  <a href="#getting-started">Setup</a> ·
+  <a href="#license">License</a>
+</p>
 
 ## Overview
 
@@ -160,7 +172,7 @@ graph TD
     P --> R1
 ```
 
-All agents output strict JSON conforming to Pydantic schemas. Every agent call has a fallback path — if the agent fails or returns invalid JSON, heuristic defaults are used instead of failing the request.
+Some controllers parse and validate agent output against request-specific models. Some workflows use heuristic or template fallbacks. Other workflows return an error when output parsing or validation fails. Check each pipeline's error behavior before you depend on it.
 
 ## Core Pipelines
 
@@ -477,7 +489,7 @@ cd ..
 
 ```bash
 # Backend (terminal 1)
-uv run fastapi dev src/main.py
+uv run fastapi dev src/main.py --port 8002
 
 # Frontend (terminal 2)
 cd content-gen
