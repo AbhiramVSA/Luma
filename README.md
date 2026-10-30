@@ -489,7 +489,7 @@ cd ..
 
 ```bash
 # Backend (terminal 1)
-uv run fastapi dev src/main.py
+uv run fastapi dev src/main.py --port 8002
 
 # Frontend (terminal 2)
 cd content-gen
