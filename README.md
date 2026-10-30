@@ -172,7 +172,7 @@ graph TD
     P --> R1
 ```
 
-Controllers parse and validate agent output for each workflow. Some workflows use heuristic or template fallbacks. Other workflows return an error when agent output fails validation. Check each pipeline's error behavior before you depend on it.
+Some controllers parse and validate agent output against request-specific models. Some workflows use heuristic or template fallbacks. Other workflows return an error when output parsing or validation fails. Check each pipeline's error behavior before you depend on it.
 
 ## Core Pipelines
 
