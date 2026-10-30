@@ -172,7 +172,7 @@ graph TD
     P --> R1
 ```
 
-All agents output strict JSON conforming to Pydantic schemas. Every agent call has a fallback path — if the agent fails or returns invalid JSON, heuristic defaults are used instead of failing the request.
+Controllers parse and validate agent output for each workflow. Some workflows use heuristic or template fallbacks. Other workflows return an error when agent output fails validation. Check each pipeline's error behavior before you depend on it.
 
 ## Core Pipelines
 
